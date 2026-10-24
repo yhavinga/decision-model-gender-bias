@@ -49,9 +49,32 @@ The figures are renders of the charts in the accompanying write-up; the numbers 
 | `results/models.json` | The models LM Studio listed when the runs were made. |
 | `figures/` | PNG renders of the four figures above. |
 
+## LM Studio setup
+
+The runs need two *decision* models. LM Studio lists them with type `decision`; they answer through `/v1/systemone` and are not chat models, so a chat model cannot stand in for them. Both are open (not gated) and licensed Apache-2.0 on Hugging Face.
+
+| Identifier in LM Studio | Hugging Face repo | Based on | File used | Loaded |
+| --- | --- | --- | --- | --- |
+| `pplx-decider-27b-artemis` | [`turintech/pplx-decider-27B-Artemis-GGUF`](https://huggingface.co/turintech/pplx-decider-27B-Artemis-GGUF) | `perplexity-ai/pplx-decider-v1.1-27b` (27B, architecture `qwen35`) | `pplx-decider-27B-Artemis-Q4_K_S.gguf`, 15.3 GB | 16.2 GB |
+| `cloudflare_clef-flash` | [`bartowski/Cloudflare_clef-flash-GGUF`](https://huggingface.co/bartowski/Cloudflare_clef-flash-GGUF) | `Cloudflare/clef-flash` (9.1B, architecture `clef`) | `Cloudflare_clef-flash-Q4_K_S.gguf`, 5.7 GB | 6.7 GB |
+
+1. Install LM Studio (the runs used 0.4.26) and its `lms` command-line tool.
+2. Download the two Q4_K_S files: search for the repo names in the app, or run `lms get <Hugging Face URL> --select` and pick `Q4_K_S`.
+3. Start the local server: `lms server start` (port 1234 by default) or the Developer tab in the app.
+4. Load both models by their key (see `lms ls`) with context length 16,384 and four parallel slots: `lms load <model-key> -c 16384 --parallel 4`.
+5. Check with `python3 run.py --list`: both models should show type `decision` and state `loaded`.
+
+Settings, and why:
+
+- **Context length 16,384** is generous: the longest prompt is 405 tokens (the Study 2d vignette plus LM Studio's own framing).
+- **Parallel slots:** the runs are serial and use one. Four slots only matter for `--determinism`, which sends four requests at once.
+- **Evaluation batch size:** a decision question must fit in one evaluation batch. Both loads handled all 1,620 requests; if LM Studio refuses a request as too long, raise the batch size in the model's load settings.
+- **No on-demand loading:** `run.py` refuses a model that is not loaded, so the settings you loaded with are the settings used.
+- **Memory:** both models together take about 23 GB loaded. The runs were made on an Apple Silicon Mac. Unload afterwards with `lms unload <model-key>`.
+
 ## Run it
 
-Standard library only; tested with Python 3.12. Start the LM Studio server (`localhost:1234`) and load the model first (`lms load <model>`); `run.py` stops if it is not loaded.
+Standard library only; tested with Python 3.12. Set up LM Studio first (above); `run.py` stops if the model is not loaded.
 
 ```bash
 python3 run.py --list                                           # models in LM Studio, writes results/models.json
