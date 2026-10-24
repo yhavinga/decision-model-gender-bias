@@ -77,3 +77,7 @@ python3 analyze.py                                              # results/summar
 - Two models, one quantization each.
 - GPT-4's numbers are sampled chat answers from the paper (arXiv version); ours are probabilities from another interface, so model and interface are not separated. A chat model run through the same prompts would separate them.
 - No human baseline, and the phrases are not matched on cue strength. "Abuse" and "torture" differ in meaning as well as severity.
+
+## License
+
+[MIT](LICENSE). The 40 phrases, the dilemmas and the vignette in `stimuli.py` are reproduced from Fulgu & Capraro (2024) for replication and remain under the paper's terms; the neutral phrases and prompt variants are ours.
