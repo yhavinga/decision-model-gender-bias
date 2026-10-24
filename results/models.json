@@ -1,0 +1,139 @@
+[
+ {
+  "id": "pplx-decider-27b-artemis",
+  "object": "model",
+  "type": "decision",
+  "publisher": "turintech",
+  "arch": "qwen35",
+  "compatibility_type": "gguf",
+  "quantization": "Q4_K_S",
+  "state": "loaded",
+  "max_context_length": 262144,
+  "loaded_context_length": 16384
+ },
+ {
+  "id": "cloudflare_clef-flash",
+  "object": "model",
+  "type": "decision",
+  "publisher": "bartowski",
+  "arch": "clef",
+  "compatibility_type": "gguf",
+  "quantization": "Q4_K_S",
+  "state": "not-loaded",
+  "max_context_length": 262144
+ },
+ {
+  "id": "qwen3.8-27b-uncensored-mlx",
+  "object": "model",
+  "type": "vlm",
+  "publisher": "orcarouter",
+  "arch": "qwen3_5",
+  "compatibility_type": "mlx",
+  "quantization": "8bit",
+  "state": "not-loaded",
+  "max_context_length": 262144,
+  "capabilities": [
+   "tool_use"
+  ]
+ },
+ {
+  "id": "bor-1b-v1",
+  "object": "model",
+  "type": "llm",
+  "publisher": "mradermacher",
+  "arch": "llama",
+  "compatibility_type": "gguf",
+  "quantization": "Q8_0",
+  "state": "not-loaded",
+  "max_context_length": 32768
+ },
+ {
+  "id": "llama-3.2-8x3b-moe-dark-champion-instruct-uncensored-abliterated-18.4b",
+  "object": "model",
+  "type": "llm",
+  "publisher": "DavidAU",
+  "arch": "llama",
+  "compatibility_type": "gguf",
+  "quantization": "Q8_0",
+  "state": "not-loaded",
+  "max_context_length": 131072,
+  "capabilities": [
+   "tool_use"
+  ]
+ },
+ {
+  "id": "gemma-4-31b-it-abliterated-v2-i1",
+  "object": "model",
+  "type": "llm",
+  "publisher": "mradermacher",
+  "arch": "gemma4",
+  "compatibility_type": "gguf",
+  "quantization": "Q4_K_M",
+  "state": "not-loaded",
+  "max_context_length": 262144,
+  "capabilities": [
+   "tool_use"
+  ]
+ },
+ {
+  "id": "huihui-gemma-4-31b-it-qat-unquantized-abliterated",
+  "object": "model",
+  "type": "vlm",
+  "publisher": "huihui-ai",
+  "arch": "gemma4",
+  "compatibility_type": "gguf",
+  "quantization": "Q4_K",
+  "state": "not-loaded",
+  "max_context_length": 262144,
+  "capabilities": [
+   "tool_use"
+  ]
+ },
+ {
+  "id": "google/gemma-4-31b",
+  "object": "model",
+  "type": "vlm",
+  "publisher": "google",
+  "arch": "gemma4",
+  "compatibility_type": "gguf",
+  "quantization": "Q4_K_M",
+  "state": "not-loaded",
+  "max_context_length": 262144,
+  "capabilities": [
+   "tool_use"
+  ]
+ },
+ {
+  "id": "mlabonne_gemma-3-27b-it-abliterated",
+  "object": "model",
+  "type": "vlm",
+  "publisher": "bartowski",
+  "arch": "gemma3",
+  "compatibility_type": "gguf",
+  "quantization": "Q8_0",
+  "state": "not-loaded",
+  "max_context_length": 131072
+ },
+ {
+  "id": "text-embedding-nomic-embed-text-v1.5",
+  "object": "model",
+  "type": "embeddings",
+  "publisher": "nomic-ai",
+  "arch": "nomic-bert",
+  "compatibility_type": "gguf",
+  "quantization": "Q4_K_M",
+  "state": "not-loaded",
+  "max_context_length": 2048
+ },
+ {
+  "id": "boreas-7b-chat",
+  "object": "model",
+  "type": "llm",
+  "publisher": "mradermacher",
+  "arch": "llama",
+  "compatibility_type": "gguf",
+  "quantization": "Q8_0",
+  "state": "not-loaded",
+  "max_context_length": 32768
+ }
+]
