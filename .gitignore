@@ -1,2 +1,10 @@
 __pycache__/
 data/
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.fdb_latexmk
+paper/*.fls
+paper/*.log
+paper/*.out
+paper/arxiv.tar.gz
