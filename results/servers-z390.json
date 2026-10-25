@@ -1,0 +1,207 @@
+{
+ "host": "z390: 2x NVIDIA RTX 3090, driver 595.99.02, Ubuntu 22.04; one llama-server per model in Docker, pinned to one GPU",
+ "image": "sha256:ccc245e66675fe124221e0c2eed248fddc74113180aed8e5a7c0d7b96154b00b ghcr.io/ggml-org/llama.cpp@sha256:334ddc356f5ad08dbf7eb6c98d1739a72e15b5cf452d1aeeae740c6625eb1226",
+ "llama_server": "0.7.0-dev (build 11870, commit 74bca3950)",
+ "sources": {
+  "kev-4b": "ggml-org/Kev-4B-GGUF",
+  "d1-3b": "LiquidAI/d1-3B-GGUF",
+  "cloudflare_clef-flash-cuda": "bartowski/Cloudflare_clef-flash-GGUF",
+  "pplx-decider-27b-artemis-cuda": "turintech/pplx-decider-27B-Artemis-GGUF",
+  "granite-switch-4.1-8b": "ibm-granite/granite-switch-4.1-8b-GGUF",
+  "granite-switch-4.1-8b-ub1": "ibm-granite/granite-switch-4.1-8b-GGUF"
+ },
+ "models": {
+  "kev-4b": {
+   "file": "Kev-4B-Q4_K_M.gguf",
+   "sha256": "33ae6b18926502b2209a1bf7d3b61a350d65938441515c686bb87d226a19eff9",
+   "server_args": [
+    "-m",
+    "/models/Kev-4B-Q4_K_M.gguf",
+    "--alias",
+    "kev-4b",
+    "-ngl",
+    "999",
+    "-c",
+    "8192",
+    "-np",
+    "4",
+    "-b",
+    "2048",
+    "-ub",
+    "2048",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8080"
+   ],
+   "architecture": {
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "decisions"
+    ]
+   }
+  },
+  "d1-3b": {
+   "file": "d1-3B-Q4_K_M.gguf",
+   "sha256": "16aff27ea2eefdc32b9897f43854a5d3170c1dc8dccb9c756905af30a4e22402",
+   "server_args": [
+    "-m",
+    "/models/d1-3B-Q4_K_M.gguf",
+    "--alias",
+    "d1-3b",
+    "-ngl",
+    "999",
+    "-c",
+    "8192",
+    "-np",
+    "4",
+    "-b",
+    "2048",
+    "-ub",
+    "2048",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8080"
+   ],
+   "architecture": {
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "decisions"
+    ]
+   }
+  },
+  "cloudflare_clef-flash-cuda": {
+   "file": "Cloudflare_clef-flash-Q4_K_S.gguf",
+   "sha256": "ec1472cd7c72cf933ca2da528c466e0932d7814aca503de53965417eec5b49c2",
+   "server_args": [
+    "-m",
+    "/models/Cloudflare_clef-flash-Q4_K_S.gguf",
+    "--alias",
+    "cloudflare_clef-flash-cuda",
+    "-ngl",
+    "999",
+    "-c",
+    "8192",
+    "-np",
+    "4",
+    "-b",
+    "2048",
+    "-ub",
+    "2048",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8080"
+   ],
+   "architecture": {
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "decisions"
+    ]
+   },
+   "same_file_as": "cloudflare_clef-flash on the Mac (LM Studio); sha256 identical"
+  },
+  "pplx-decider-27b-artemis-cuda": {
+   "file": "pplx-decider-27B-Artemis-Q4_K_S.gguf",
+   "sha256": "9e23efec609fa777dc216d9b51f3e74bb473f6aa4163c2be8bd87f0ef5e7808a",
+   "server_args": [
+    "-m",
+    "/models/pplx-decider-27B-Artemis-Q4_K_S.gguf",
+    "--alias",
+    "pplx-decider-27b-artemis-cuda",
+    "-ngl",
+    "999",
+    "-c",
+    "8192",
+    "-np",
+    "4",
+    "-b",
+    "2048",
+    "-ub",
+    "2048",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8080"
+   ],
+   "same_file_as": "pplx-decider-27b-artemis on the Mac (LM Studio); sha256 identical"
+  },
+  "granite-switch-4.1-8b": {
+   "file": "granite-switch-4.1-8b-Q4_K_M.gguf",
+   "sha256": "cebe8dab60e60e1ec09c2607451f6eb6b08f945da422391ff99e1404fa737dfa",
+   "server_args": [
+    "-m",
+    "/models/granite-switch-4.1-8b-Q4_K_M.gguf",
+    "-ngl",
+    "999",
+    "-c",
+    "8192",
+    "-np",
+    "1",
+    "--no-cache-prompt",
+    "--cache-ram",
+    "0",
+    "--ctx-checkpoints",
+    "0",
+    "--no-cache-idle-slots",
+    "--slot-save-path",
+    "/tmp",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8080",
+    "--alias",
+    "granite-switch-4.1-8b",
+    "-b",
+    "2048",
+    "-ub",
+    "2048"
+   ],
+   "client": "run.py --erase-slot"
+  },
+  "granite-switch-4.1-8b-ub1": {
+   "file": "granite-switch-4.1-8b-Q4_K_M.gguf",
+   "sha256": "cebe8dab60e60e1ec09c2607451f6eb6b08f945da422391ff99e1404fa737dfa",
+   "server_args": [
+    "-m",
+    "/models/granite-switch-4.1-8b-Q4_K_M.gguf",
+    "-ngl",
+    "999",
+    "-c",
+    "8192",
+    "-np",
+    "1",
+    "--no-cache-prompt",
+    "--cache-ram",
+    "0",
+    "--ctx-checkpoints",
+    "0",
+    "--no-cache-idle-slots",
+    "--slot-save-path",
+    "/tmp",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8080",
+    "--alias",
+    "granite-switch-4.1-8b-ub1",
+    "-b",
+    "2",
+    "-ub",
+    "1"
+   ],
+   "note": "control run: one token per batch"
+  }
+ },
+ "checks": {
+  "granite-default-settings/granite-switch-4.1-8b-prompt-cache.jsonl": "granite with -np 4 and default cache settings",
+  "granite-default-settings/granite-switch-4.1-8b-no-cache-np4.jsonl": "granite with -np 4 --no-cache-prompt --cache-ram 0"
+ }
+}

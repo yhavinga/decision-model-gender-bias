@@ -8,10 +8,19 @@ are replaced by the prompt variants in stimuli.py.
     python3 run.py --model pplx-decider-27b-artemis --determinism
     python3 run.py --model pplx-decider-27b-artemis --sample 60      # pilot: an even spread over all requests
     python3 run.py --model pplx-decider-27b-artemis --workers 4      # resumes: requests already in the file are skipped
+    python3 run.py --model kev-4b --url http://localhost:8081 --llama-server   # llama.cpp's llama-server, started with --alias kev-4b
+    python3 run.py --model qwen3.8-27b-logprobs --url http://localhost:8082 --llama-server --readout logprobs   # a chat model, same questions
+    python3 run.py --model qwen3.8-27b-generate --url http://localhost:8082 --llama-server --readout generate   # sampled answers, as in the paper
+
+A chat or base model has no /v1/systemone, so --readout logprobs asks each typed question as text with lettered options
+and reads the probabilities of the option letters (or yes/no) as the first answer token; --readout generate samples
+answers and counts them. Both write answers in systemone's format, so analyze.py reads every readout alike.
 """
 import argparse
 import hashlib
 import json
+import math
+import re
 import sys
 import time
 import urllib.error
@@ -22,6 +31,9 @@ from pathlib import Path
 import stimuli
 
 URL = "http://localhost:1234"
+ERASE_SLOT = False
+READOUT, RAW, SAMPLES = "systemone", False, 5
+LETTERS = "ABCDEFGHIJ"
 RESULTS = Path(__file__).parent / "results"
 
 
@@ -38,7 +50,7 @@ def call(path, body=None, timeout=120):
     except urllib.error.HTTPError as e:
         raise ServerError(f"run.py: {path} answered HTTP {e.code}: {e.read().decode(errors='replace')[:500]}") from None
     except urllib.error.URLError as e:
-        raise ServerError(f"run.py: cannot reach {URL}{path} ({e.reason}); is the LM Studio server running?") from None
+        raise ServerError(f"run.py: cannot reach {URL}{path} ({e.reason}); is the server running?") from None
 
 
 def validate(questions, answers):
@@ -57,9 +69,73 @@ def validate(questions, answers):
             raise ValueError(f"run.py: malformed answer to {name} ({q['type']}): {json.dumps(a)[:300]}")
 
 
+def as_text(req):
+    """One typed question as a prompt for a chat or base model; returns its name, the question, the prompt, the option
+    keys in systemone's format and the marks (letters, or yes/no) that stand for them."""
+    (name, q), = req["questions"].items()
+    if q["type"] == "noul":
+        return name, q, f"{req['state']}\n\n{q['instructions']}\n\nAnswer with yes or no only.", ["yes", "no"], ["yes", "no"]
+    keys = list(q["criteria"]) if q["type"] == "choice" else [str(i) for i in range(len(q["criteria"]))]
+    texts = list(q["criteria"].values()) if q["type"] == "choice" else q["criteria"]
+    lines = "\n".join(f"{LETTERS[i]}. {t}" for i, t in enumerate(texts))
+    return name, q, f"{req['state']}\n\n{q['instructions']}\n\n{lines}\n\nAnswer with the letter of one option only.", keys, list(LETTERS[:len(keys)])
+
+
+def chat(model, text, **params):
+    # thinking off: the first token must be the answer; no prompt cache, so no answer depends on the request before
+    return call("/v1/chat/completions", {"model": model, "messages": [{"role": "user", "content": text}], "cache_prompt": False,
+                                         "chat_template_kwargs": {"enable_thinking": False}, **params})
+
+
+def ask_text(model, req):
+    name, q, text, keys, marks = as_text(req)
+    norm = (lambda t: t.strip().strip(".:)*").lower()) if q["type"] == "noul" else (lambda t: t.strip().strip(".:)*("))
+    if READOUT == "logprobs":
+        if RAW:
+            res = call("/completion", {"prompt": f"{text}\nAnswer:", "n_predict": 1, "n_probs": 20, "temperature": 0, "cache_prompt": False})
+            top, used = res["completion_probabilities"][0]["top_logprobs"], res["tokens_evaluated"]
+        else:
+            res = chat(model, text, max_tokens=1, temperature=0, logprobs=True, top_logprobs=20)
+            top, used = res["choices"][0]["logprobs"]["content"][0]["top_logprobs"], res["usage"]["prompt_tokens"]
+        mass = dict.fromkeys(marks, 0.0)
+        for t in top:
+            if norm(t["token"]) in mass:
+                mass[norm(t["token"])] += math.exp(t["logprob"])
+        total = sum(mass.values())
+        if total == 0:
+            raise ValueError(f"run.py: none of {marks} among the 20 most probable first tokens {[t['token'] for t in top]}")
+        probs, extra, out_tokens = {k: mass[m] / total for k, m in zip(keys, marks)}, {"mass": total}, 1
+    else:
+        counts, invalid = dict.fromkeys(marks, 0), []
+        pattern = r"\b(yes|no)\b" if q["type"] == "noul" else rf"\b([{LETTERS[:len(marks)]}])\b"
+        for seed in range(SAMPLES):
+            res = chat(model, text, max_tokens=8, temperature=1.0, seed=seed)
+            out = res["choices"][0]["message"]["content"]
+            hit = re.search(pattern, out.lower() if q["type"] == "noul" else out)
+            if hit:
+                counts[hit.group(1)] += 1
+            else:
+                invalid.append(out[:40])
+        if not sum(counts.values()):
+            raise ValueError(f"run.py: no usable answer in {SAMPLES} samples: {invalid}")
+        probs = {k: counts[m] / sum(counts.values()) for k, m in zip(keys, marks)}
+        extra, used, out_tokens = {"samples": SAMPLES, "invalid": invalid}, res["usage"]["prompt_tokens"], SAMPLES
+    answer = {"type": "noul", "noul": probs["yes"]} if q["type"] == "noul" else {"type": q["type"], "probabilities": probs}
+    if q["type"] == "choice":
+        answer["choice"] = max(probs, key=probs.get)
+    return {"answers": {name: {**answer, **extra}}, "usage": {"input_tokens": used, "output_tokens": out_tokens}}
+
+
 def ask(model, req):
+    if ERASE_SLOT:
+        # llama-server reuses the KV cache of the previous prompt for decision models that also generate text
+        # (granite-switch), whatever --no-cache-prompt says; an empty slot makes every answer independent of the one before
+        call("/slots/0?action=erase", {})
     started = time.perf_counter()
-    res = call("/v1/systemone", {"model": model, "state": req["state"], "questions": req["questions"]})
+    if READOUT == "systemone":
+        res = call("/v1/systemone", {"model": model, "state": req["state"], "questions": req["questions"]})
+    else:
+        res = ask_text(model, req)
     ms = round((time.perf_counter() - started) * 1000)
     try:
         validate(req["questions"], res.get("answers"))
@@ -118,21 +194,36 @@ def determinism(model, reqs, out):
 
 
 def main():
+    global URL, ERASE_SLOT, READOUT, RAW, SAMPLES
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--list", action="store_true", help="list the models of the LM Studio server and write results/models.json")
     ap.add_argument("--model")
-    ap.add_argument("--studies", default="1,2ab,2c,2d")
+    ap.add_argument("--url", default=URL, help=f"server address (default {URL}, LM Studio)")
+    ap.add_argument("--llama-server", action="store_true", help="the server is llama.cpp's llama-server: check the model through /v1/models instead of LM Studio's /api/v0/models")
+    ap.add_argument("--erase-slot", action="store_true", help="llama-server: erase slot 0 before every request (start the server with -np 1 --slot-save-path DIR)")
+    ap.add_argument("--readout", choices=["systemone", "logprobs", "generate"], default="systemone", help="how the answer is read; logprobs and generate are for chat or base models (see above)")
+    ap.add_argument("--raw", action="store_true", help="--readout logprobs on a base model: a plain prompt to /completion instead of the chat template")
+    ap.add_argument("--samples", type=int, default=SAMPLES, help="--readout generate: sampled answers per request")
+    ap.add_argument("--studies", default=",".join(stimuli.STUDIES))
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--sample", type=int, help="send only about this many requests, evenly spread")
     ap.add_argument("--determinism", action="store_true", help="repeat a sample of requests, serially and in parallel, and record the largest difference")
     args = ap.parse_args()
+    URL, ERASE_SLOT, READOUT, RAW, SAMPLES = args.url, args.erase_slot, args.readout, args.raw, args.samples
 
-    models = list_models() if args.list else call("/api/v0/models")["data"]
-    if args.list:
-        return
-    state = {m["id"]: m.get("state") for m in models}
-    if state.get(args.model) != "loaded":
-        sys.exit(f"run.py: {args.model} is {state.get(args.model, 'unknown')}, not loaded; load it first (lms load {args.model}) so it keeps its own settings")
+    if args.llama_server:
+        # llama-server serves one model under its --alias; the GGUF metadata says whether it is a decision model
+        m = call("/v1/models")["data"][0]
+        outputs, need = m["architecture"]["output_modalities"], "decisions" if READOUT == "systemone" else "text"
+        if m["id"] != args.model or need not in outputs:
+            sys.exit(f"run.py: {URL} serves {m['id']} with outputs {outputs}, not {args.model} with {need} output")
+    else:
+        models = list_models() if args.list else call("/api/v0/models")["data"]
+        if args.list:
+            return
+        state = {m["id"]: m.get("state") for m in models}
+        if state.get(args.model) != "loaded":
+            sys.exit(f"run.py: {args.model} is {state.get(args.model, 'unknown')}, not loaded; load it first (lms load {args.model}) so it keeps its own settings")
 
     RESULTS.mkdir(exist_ok=True)
     out = RESULTS / f"{args.model.replace('/', '_')}.jsonl"
