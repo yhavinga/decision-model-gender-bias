@@ -1,4 +1,4 @@
-# Gender biases in models built to make decisions
+# When the top answer decides: gender bias in decision models
 
 Decision models are language models built to route, classify and triage: they return option probabilities from one forward pass, and an application acts on the top answer. This repository tests five open decision models with the gender-bias studies of Fulgu & Capraro (2024), ["Surprising gender biases in GPT"](https://arxiv.org/abs/2407.06003), and with two bias benchmarks, BBQ and StereoSet: 9,955 requests per model. The models are also compared with their base models and with generated answers.
 
