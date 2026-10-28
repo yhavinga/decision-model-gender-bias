@@ -1,14 +1,13 @@
-"""Run the stimuli in stimuli.py against one LM Studio decision model; every answer is appended to results/<model>.jsonl.
+"""Run the stimuli in stimuli.py against one decision model; every answer is appended to results/<model>.jsonl.
 
 A decision model answers through POST /v1/systemone, not through /v1/chat/completions: one forward pass
 returns probabilities and no tokens. A locally served model gives identical answers to identical requests, so the
 paper's repeated chats are replaced by the prompt variants in stimuli.py; TypeSafe's Jev does not, so --out holds a second pass.
 
-    python3 run.py --list
-    python3 run.py --model pplx-decider-27b-artemis --determinism
-    python3 run.py --model pplx-decider-27b-artemis --sample 60      # pilot: an even spread over all requests
-    python3 run.py --model pplx-decider-27b-artemis --workers 4      # resumes: requests already in the file are skipped
-    python3 run.py --model kev-4b --url http://localhost:8081 --llama-server   # llama.cpp's llama-server, started with --alias kev-4b
+    python3 run.py --model kev-4b-bf16 --url http://localhost:8081 --llama-server   # llama.cpp's llama-server, started with --alias kev-4b-bf16
+    python3 run.py --model kev-4b-bf16 --url http://localhost:8081 --llama-server --determinism
+    python3 run.py --model kev-4b-bf16 --url http://localhost:8081 --llama-server --sample 60   # pilot: an even spread over all requests
+    python3 run.py --model kev-4b-bf16 --url http://localhost:8081 --llama-server --workers 4   # resumes: requests already in the file are skipped
     python3 run.py --model qwen3.8-27b-logprobs --url http://localhost:8082 --llama-server --readout logprobs   # a chat model, same questions
     python3 run.py --model qwen3.8-27b-generate --url http://localhost:8082 --llama-server --readout generate   # sampled answers, as in the paper
     python3 run.py --model jev-1.14.0 --url https://api.typesafe.ai --key-env TYPESAFE_API_KEY --workers 8   # TypeSafe's Jev; its answers vary between calls
@@ -34,7 +33,7 @@ from pathlib import Path
 
 import stimuli
 
-URL = "http://localhost:1234"
+URL = None
 API_KEY = None
 ERASE_SLOT = False
 READOUT, RAW, SAMPLES = "systemone", False, 5
@@ -196,15 +195,6 @@ def key(model, req):
     return hashlib.sha1(json.dumps([model, req["state"], req["questions"]]).encode()).hexdigest()[:16]
 
 
-def list_models():
-    models = call("/api/v0/models")["data"]
-    for m in models:
-        print(f"{m['id']:<75} {m.get('type'):<10} {m.get('state'):<11} {m.get('arch'):<9} {m.get('quantization')}")
-    RESULTS.mkdir(exist_ok=True)
-    (RESULTS / "models.json").write_text(json.dumps(models, indent=1))
-    return models
-
-
 def diff(a, b):
     """Largest absolute difference between the numbers of two answers; infinite if their shapes or labels differ."""
     if isinstance(a, dict):
@@ -243,10 +233,9 @@ def determinism(model, reqs, out):
 def main():
     global URL, API_KEY, ERASE_SLOT, READOUT, RAW, SAMPLES, JEV_HEAD, JEV_TEMP
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--list", action="store_true", help="list the models of the LM Studio server and write results/models.json")
-    ap.add_argument("--model")
-    ap.add_argument("--url", default=URL, help=f"server address (default {URL}, LM Studio)")
-    ap.add_argument("--llama-server", action="store_true", help="the server is llama.cpp's llama-server: check the model through /v1/models instead of LM Studio's /api/v0/models")
+    ap.add_argument("--model", required=True)
+    ap.add_argument("--url", required=True, help="server address")
+    ap.add_argument("--llama-server", action="store_true", help="the server is llama.cpp's llama-server: check the model and its output type through /v1/models")
     ap.add_argument("--key-env", help="send the API key in this environment variable as a bearer token (TypeSafe's API, --url https://api.typesafe.ai); every answer must come from the versioned --model")
     ap.add_argument("--erase-slot", action="store_true", help="llama-server: erase slot 0 before every request (start the server with -np 1 --slot-save-path DIR)")
     ap.add_argument("--readout", choices=["systemone", "logprobs", "generate", "jev"], default="systemone", help="how the answer is read; logprobs and generate are for chat or base models, jev for AutoTrust's JEV (see above)")
@@ -279,12 +268,7 @@ def main():
         if m["id"] != args.model or need not in outputs:
             sys.exit(f"run.py: {URL} serves {m['id']} with outputs {outputs}, not {args.model} with {need} output")
     else:
-        models = list_models() if args.list else call("/api/v0/models")["data"]
-        if args.list:
-            return
-        state = {m["id"]: m.get("state") for m in models}
-        if state.get(args.model) != "loaded":
-            sys.exit(f"run.py: {args.model} is {state.get(args.model, 'unknown')}, not loaded; load it first (lms load {args.model}) so it keeps its own settings")
+        sys.exit("run.py: say which server answers: --llama-server, --key-env (TypeSafe's API) or --readout jev (vLLM)")
 
     RESULTS.mkdir(exist_ok=True)
     out = RESULTS / f"{(args.out or args.model).replace('/', '_')}.jsonl"

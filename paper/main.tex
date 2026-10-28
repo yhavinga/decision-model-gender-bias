@@ -12,13 +12,20 @@
 \usepackage{booktabs}
 \usepackage{tabularx}
 \usepackage{array}
+\usepackage{xcolor}
 
 \newcolumntype{L}{>{\raggedright\arraybackslash}X}
+% Five full-width figures: let two of them share the top of a page.
+\renewcommand{\dbltopfraction}{0.85}
+\renewcommand{\topfraction}{0.85}
+\renewcommand{\textfraction}{0.1}
 \raggedbottom
 \newcommand{\repo}{\url{https://github.com/yhavinga/decision-model-gender-bias}}
 \newcommand{\ct}{``can't tell''}
+% Items the author still has to confirm are marked in red.
+\newcommand{\TODO}[1]{\textcolor{red}{[#1]}}
 
-\title{When the top answer decides: gender bias in decision models}
+\title{When the Top Answer Decides: Gender Bias in Decision Models}
 
 \author{Yeb Havinga\thanks{This work was done independently and is not endorsed by any lab or by the author's employer.} \\
   Independent Researcher \\
@@ -29,322 +36,327 @@
 \maketitle
 
 \begin{abstract}
-Decision models are language models built to route, classify and triage: they answer typed questions with option probabilities from one forward pass, and an application acts on the answer. TypeSafe AI introduced the class with its closed model Jev; open models from Perplexity, Cloudflare, IBM, Liquid AI and others answer the same request format, and AutoTrust distils Jev into open weights. We found no bias measurement by any of their makers. We tested Jev and seven open decision models with the gender-bias studies of \citet{fulgu-capraro-2024-surprising}, BBQ and StereoSet (9,955 requests per model). All eight rate violence against a man as more acceptable than against a woman when it serves a greater good, in the mean rating of all 160 combinations of model, act and stake; read from top answers, 98 show the gap and none reverses it. Forced to say who wrote a child's phrase without a gender cue, three open models answer ``girl'' in 81\% to 94\% of cases and Jev most often ``non-binary''; offered \ct, they decline in 74\% to 100\% of cases. In BBQ's gender questions without evidence, Jev never names a person; the open models do so in up to 67\% of questions, and five of the six that do so in more than 5\% mostly name the stereotyped person. On these questions, AutoTrust's distillations differ from Jev 3 to 9 times more than AutoTrust reports for its own test set. Taking the top answer turns probability leans of about 0.6 into decisions of up to 0.94; a confidence gate, as the makers advise, removes many of these decisions but mostly not their direction. Code and all model answers: \repo.
+Decision models return option probabilities for typed questions in one forward pass, and applications act on the top answer. We test TypeSafe's closed Jev and five open decision models with the gender-bias studies of \citet{fulgu-capraro-2024-surprising}, BBQ, StereoSet and a gender-swapped decision task \citep{tamkin-etal-2023-discrimination}. All six rate violence for a greater good as more acceptable against a man than against a woman, in every act and stake. Asked who wrote a child's phrase without a gender cue, two open models answer ``girl'' in 82--85\% of cases, but most abstain when they may. In ambiguous BBQ gender questions Jev always abstains; the open models commit in 8--61\%, mostly to the stereotyped one. In the decision task, five of the six give women significantly more favourable answers (+0.05 to +0.10 in log-odds); a gender swap changes 1--3.5\% of top answers (Jev's partly through call-to-call variation). The top answer turns leans into firm decisions (clef-flash: 0.59 to 0.89), and a confidence gate removes many but mostly not their direction. Two open models described as students of Jev are 3--9 times further from it on our questions than their cards report for their own test set.
 \end{abstract}
 
 \section{Introduction}
 
-Decision models are built to act. In September 2026 TypeSafe AI released Jev, ``a new class of frontier models built to make fast, structured decisions that software can use directly'' \citep{typesafe-2026-jev}. Jev answers typed questions (pick one of these options, score this on a scale, yes or no) with option probabilities from a single forward pass, through a closed API. Within weeks, Perplexity, Cloudflare, IBM, Liquid AI and independent developers published open models that answer the same request format, and AutoTrust published open distillations of Jev itself. These models route tickets, classify documents and triage requests, and the application acts on the answer. A bias in such a model therefore does not stay a statement: it becomes a different decision about a person.
+Decision models are built to act. In September 2026 TypeSafe AI released Jev, ``a new class of frontier models built to make fast, structured decisions that software can use directly'' \citep{typesafe-2026-jev}: it answers typed questions (pick one of these options, score this on a scale, yes or no) with option probabilities from one forward pass, through a closed API. Open decision models from Perplexity, Cloudflare, IBM, Liquid AI and Jared Palmer can be served through llama.cpp's \texttt{/v1/systemone} endpoint \citep{perplexity-2026-pplx,cloudflare-2026-clef-flash,ibm-2026-granite-switch,liquidai-2026-d1,palmer-2026-kev}; the clef-flash and Kev cards state compatibility with Jev's API. AutoTrust's cards describe its open JEV models as students of Jev 1.13 \citep{autotrust-2026-jev9b,autotrust-2026-jev27b}. An application acts on the top answer, so a bias can become a different decision about a person: an allocational harm, not only a representational one \citep{gallegos-etal-2024-bias}.
 
-The makers state what these models do not guarantee. TypeSafe serves one general model, ``the same weights serve every account'' \citep{typesafe-2026-models}, and notes that calibration ``does not guarantee that an individual answer is correct'' \citep{typesafe-2026-systemone}. AutoTrust writes ``Not for high-stakes decisions'' \citep{autotrust-2026-jev9b}, and the model card of Kev says ``Do not use it for consequential automated decisions about people without human review. Biases of the base model and of the training data \ldots{} are not measured'' \citep{palmer-2026-kev}. We found no bias or fairness measurement in the model cards or announcements of any of these models.
+The makers add caveats. AutoTrust writes ``Not for high-stakes decisions'' \citep{autotrust-2026-jev9b}; Kev's model card says ``Do not use it for consequential automated decisions about people without human review. Biases of the base model and of the training data \ldots{} are not measured'' \citep{palmer-2026-kev}. We found no bias measurement in the cards and announcements we checked.
 
-\citet{fulgu-capraro-2024-surprising} found surprising gender biases in GPT-4. It attributed masculine-stereotyped children's phrases to girls far more readily than feminine ones to boys, and it judged violence against a man more acceptable than against a woman when a nuclear apocalypse was at stake. We ask whether such biases appear in decision models, and add two benchmarks with a known structure, BBQ and StereoSet. Our contributions:
+\citet{fulgu-capraro-2024-surprising} found that GPT-4 attributed masculine-stereotyped children's phrases to girls far more readily than feminine ones to boys, and judged violence against a man more acceptable than against a woman when a nuclear apocalypse was at stake. We ask whether such biases appear in decision models. Our contributions:
 
 \begin{enumerate}
-\item A bias evaluation of the original decision model, Jev, and seven open ones: five that implement its API and two distillations of it. It replicates the paper's studies with prompt variants in place of repeated chats, extended to five stakes, a \ct{} option and nine BBQ categories.
-\item Controls that partly separate model, base model and interface: the same questions through the base models, two of which carry both an imitation and a distillation of Jev, through granite-switch's own text interface, and as generated answers.
-\item A measurement of how closely the open models reproduce Jev on bias questions, against the noise of Jev itself and a change of its version.
-\item In line with \citet{manduru-domeniconi-2026-beyond}, a split of BBQ's ambiguous-context score into how often a model names a person and how one-sided those names are, which shows biases the standard score hides.
-\item Evidence that taking the top answer amplifies mild probability leans into firm decisions, or hides them; that a confidence gate, as the makers advise, removes many of these decisions but mostly not their direction; and that 4-bit quantization moves single answers more than most aggregates.
+\item A bias evaluation of Jev and five open decision models at their released 16-bit precision (the 27B model in 8-bit): the original paradigms extended by prompt variants, five stakes and an abstention option; BBQ in nine categories; StereoSet; and a gender-swapped decision task that tests the allocation claim directly.
+\item A comparison of probability-level measures with the argmax (top-answer) decision, with and without the makers' confidence gate.
+\item A comparison of two open models described as students of Jev with their teacher.
+\item Controls for base model, interface, numeric precision and serving path.
 \end{enumerate}
 
 \section{Related work}
+\label{sec:related}
 
-\citet{tamkin-etal-2023-discrimination} measure discrimination in language-model decisions with the normalized probability of ``yes'', the readout decision models provide natively. \citet{wang-etal-2024-answer-c} show that first-token probabilities and generated answers of instruction-tuned models often disagree on individual items, so we compare both. \citet{zheng-etal-2024-robust} trace option-order effects to a preference for option tokens, which our option rotations average out; TypeSafe reports that Jev leans toward the option listed first \citep{typesafe-2026-jaggedness}. \citet{mizrahi-etal-2024-state} argue for evaluating over many prompts, as our prompt variants do. BBQ \citep{parrish-etal-2022-bbq} and StereoSet \citep{nadeem-etal-2021-stereoset} are the benchmarks we use, and \citet{blodgett-etal-2021-stereotyping} question what such benchmarks measure. \citet{manduru-domeniconi-2026-beyond} show that BBQ's ambiguous-context score can reward indiscriminate abstention; we report answer rate and direction separately. \citet{hua-etal-2026-quantized} find that 4-bit quantization flips individual bias answers while aggregate scores stay put, as our precision experiment also finds for decision models. The makers of decision models report accuracy, calibration, speed and, for the distillations, the distance to Jev \citep{typesafe-2026-jev,autotrust-2026-jev9b,autotrust-2026-jev27b}; we found no bias evaluation.
+\paragraph{Gender asymmetries in moral judgements.} \citet{fulgu-capraro-2024-surprising} reported seven studies on GPT models; we follow the numbering of this arXiv version (journal version: \citealp{fulgu-capraro-2024-chbr}). Repeating both paradigms with ten models, \citet{bolzoni-capraro-2026-gender} found a ``male-disadvantaging asymmetry'' in several models' moral judgements and mixed directions in the attribution task. Language models also frame male actors more punitively for the same misconduct \citep{si-etal-2026-harsher}, judge female characters more mildly in otherwise identical stories \citep{bajaj-etal-2024-evaluating}, prefer to save women in trolley-style dilemmas more strongly than humans do \citep{takemoto-2024-moral,jin-etal-2025-language}, and favour female candidates in hiring tasks \citep{rozado-2026-gender,an-etal-2025-measuring}. None of these studies tests decision models.
 
-\section{Setup}
+\paragraph{Benchmarks.} \citet{blodgett-etal-2021-stereotyping} question what benchmarks such as BBQ \citep{parrish-etal-2022-bbq} and StereoSet \citep{nadeem-etal-2021-stereoset} measure, and \citet{lum-etal-2025-bias} find no significant correlation between standard bias metrics and metrics of bias in more realistic use. BBQ results change with the prompt \citep{hida-etal-2025-social,mizrahi-etal-2024-state}, and its ambiguous-context score can reward indiscriminate abstention, the refusal to answer \citep{manduru-domeniconi-2026-beyond,wen-etal-2025-know}. Forcing a choice changes what models answer \citep{rottger-etal-2024-political}, which Studies 1 and 1u compare directly.
+
+\paragraph{Decisions and readouts.} \citet{tamkin-etal-2023-discrimination} measure discrimination in yes/no decisions about people with the normalized probability of ``yes'', the readout decision models provide natively, and find positive discrimination toward women and non-binary people in Claude 2; \citet{zollo-etal-2025-towards} relate such tests to the doctrines of disparate treatment and disparate impact. First-token probabilities and generated answers often disagree \citep{wang-etal-2024-answer-c}, option order matters \citep{zheng-etal-2024-robust}, and 4-bit quantization flips individual bias answers \citep{hua-etal-2026-quantized}. Since ``bias amplification'' denotes a model exaggerating a correlation in its training data \citep{zhao-etal-2017-men}, we speak of the argmax decision instead.
+
+\section{Bias statement}
+\label{sec:bias}
+
+Following \citet{blodgett-etal-2020-language}, we state which system behaviours we count as bias, why they are harmful, and to whom, distinguishing allocational harms (a disparate distribution of resources or opportunities: direct or indirect discrimination) from representational harms such as stereotyping \citep{gallegos-etal-2024-bias}.
+
+\paragraph{What we count as bias.} (i) \emph{Counterfactual dependence}: an output that changes when only the stated gender of a person changes (Study 2, the vignette of Study 2d, the decision task). (ii) \emph{Stereotype filling}: a committed answer that follows a stereotype where the input holds no information on gender, or on which person fits a role (uncued phrases in Study 1, ambiguous BBQ questions). (iii) \emph{Stereotype preference}: more probability on a stereotyped than on an anti-stereotyped completion (StereoSet). Following evidence in the input is accuracy, and abstaining when information is missing is the correct answer.
+
+\paragraph{Why harmful, and to whom.} In the decision task, a lower probability of the favourable answer for one gender would be disparate treatment if an application acted on it: an allocational harm. No test involves a deployed application, and the other tests measure answers that are not allocations, so we treat them as representational harms. Stereotyping falls on the stereotyped group (women, men and trans people in BBQ's gender questions, and the groups of eight more categories); labelling uncued writing a girl's misrepresents boys and children outside the binary.
+
+\paragraph{Ratings that disfavour male victims.} We hold that the acceptability of harming a person should not depend on the person's gender, so ratings that judge violence against a man as more acceptable are a bias under (i). This is a normative position, not an empirical finding. Humans show a similar asymmetry, called moral chivalry \citep{feldmanhall-etal-2016-moral}, and a subjectively positive but paternalistic orientation toward women is what \citet{glick-fiske-1996-ambivalent} call benevolent sexism; a model can match human judgement and still be biased by our criterion. The ratings are hypothetical judgements, so their harm is representational: men's suffering weighs less, and women appear in need of protection.
+
+\paragraph{Gender terms.} We use each source's categories (female, male or non-binary writers and female or male victims in the original study; women, men and trans people in BBQ; female, male and non-binary people in discrim-eval), read a model's answer as the category it names, and infer no one's gender. Study 2's binary victims leave out non-binary and trans victims \citep{devinney-etal-2022-theories,dev-etal-2021-harms}.
+
+\section{Models and setup}
 \label{sec:setup}
 
-We tested eight decision models, seven of them against a control that shares their weights, base or teacher (Table~\ref{tab:models}), with the tests in Table~\ref{tab:tests}.
-
-\begin{table*}[t]
-\centering\small
-\begin{tabularx}{\textwidth}{@{}lllLl@{}}
+\begin{table}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lll@{}}
 \toprule
-Decision model & Maker & Parameters & Control & Weights \\
+Decision model & Control & Precision \\
 \midrule
-\href{https://docs.typesafe.ai/models}{Jev 1.14} & TypeSafe AI & not disclosed & Jev 1.13; a second pass over all requests & closed, API \\
-\href{https://huggingface.co/autotrust/JEV-27B}{JEV-27B} & AutoTrust AI & 27B & its teacher Jev 1.13; its backbone Qwen3.8-27B, as for pplx & bf16, run in fp8 \\
-\href{https://huggingface.co/autotrust/JEV-9B}{JEV-9B} & AutoTrust AI & 9B & its teacher Jev 1.13; its backbone Qwen3.5-9B, as for clef-flash & bf16 \\
-\href{https://huggingface.co/perplexity-ai/pplx-decider-v1.1-27b}{pplx-decider-v1.1-27b} & Perplexity & 27B & base model Qwen3.8-27B, also with generated answers & Q4\_K\_S (turintech GGUF); base Q4\_K\_M \\
-\href{https://huggingface.co/Cloudflare/clef-flash}{clef-flash} & Cloudflare & 9B & base model Qwen3.5-9B & Q4\_K\_S \\
-\href{https://huggingface.co/ibm-granite/granite-switch-4.1-8b}{granite-switch-4.1-8b} & IBM & 8B & its own text interface & Q4\_K\_M; bf16 rerun \\
-\href{https://huggingface.co/jaredpalmer/kev-4b}{Kev 4B} & Jared Palmer & 4B & base model Qwen3.5-4B-Base & Q4\_K\_M; bf16 rerun \\
-\href{https://huggingface.co/LiquidAI/d1-3B}{d1 3B} & Liquid AI & 3B & none (base LFM2.5-VL-3B not run) & Q4\_K\_M \\
+\href{https://docs.typesafe.ai/models}{Jev 1.14} & Jev 1.13; a second pass & API \\
+\href{https://huggingface.co/perplexity-ai/pplx-decider-v1.1-27b}{pplx-decider 27B} & Qwen3.8-27B$^a$ & Q8\_0$^b$ \\
+\href{https://huggingface.co/Cloudflare/clef-flash}{clef-flash 9B} & Qwen3.5-9B & bf16 \\
+\href{https://huggingface.co/ibm-granite/granite-switch-4.1-8b}{granite-switch 8B} & its text interface & bf16 \\
+\href{https://huggingface.co/jaredpalmer/kev-4b}{Kev 4B} & Qwen3.5-4B-Base & bf16 \\
+\href{https://huggingface.co/LiquidAI/d1-3B}{d1 3B} & none & bf16 \\
+\midrule
+\multicolumn{3}{@{}l}{\textit{Described as students of Jev 1.13 (Section~\ref{sec:distill} only)}} \\
+\href{https://huggingface.co/autotrust/JEV-27B}{JEV-27B} & Jev 1.13; Qwen3.8-27B & fp8$^c$ \\
+\href{https://huggingface.co/autotrust/JEV-9B}{JEV-9B} & Jev 1.13; Qwen3.5-9B & bf16 \\
 \bottomrule
-\end{tabularx}
-\caption{The eight decision models and their controls. Jev is the original; JEV-27B and JEV-9B are AutoTrust's open distillations of Jev 1.13; the other five implement Jev's API.}
+\end{tabular}
+\caption{The decision models and their controls (base model, teacher or interface). Makers: TypeSafe AI (Jev), Perplexity (\texttt{pplx-decider-v1.1-27b}), Cloudflare, IBM (\texttt{granite-switch-4.1-8b}), Jared Palmer (Kev), Liquid AI (d1; its base LFM2.5-VL-3B was not run) and AutoTrust AI (JEV). Precision: the released 16-bit, except the 27B models, whose 16-bit weights do not fit in two 24\,GB GPUs; GGUF sources in Appendix~\ref{app:serving}. $^a$Also with generated answers. $^b$Our conversion. $^c$Released in bf16.}
 \label{tab:models}
-\end{table*}
+\end{table}
+
+We tested Jev and five open decision models (Table~\ref{tab:models}); two open models that AutoTrust describes as students of Jev 1.13 appear in Section~\ref{sec:distill} only. Jev answered through TypeSafe's API on 28 October 2026 under the versioned ids \texttt{jev-1.14.0}, the current release, and \texttt{jev-1.13.0}, the version AutoTrust's cards name as teacher. The five open decision models ran in llama.cpp's \texttt{llama-server} (build 11870), whose \texttt{/v1/systemone} endpoint serves the decision outputs of all five, one request at a time; the JEV models ran in vLLM 0.32.0, the serving path besides transformers that AutoTrust documents for their adapter and decision head; all on two NVIDIA RTX 3090 GPUs. No public 8-bit file of pplx-decider keeps its decision head, so we converted Perplexity's weights to Q8\_0 with llama.cpp b11870; vLLM quantized JEV-27B to fp8 on load. The base models (Qwen3.8-27B in Q8\_0, Qwen3.5-9B in bf16, Qwen3.5-4B-Base in f16) and granite-switch's text interface (bf16) answer through the probabilities of option letters; Qwen3.8-27B also gave five generated answers per request. Appendices~\ref{app:serving}, \ref{app:quant} and~\ref{app:reliability} give server details and checks of precision and serving path. \repo{} holds the stimuli, the code, the answers of every open model and all numbers derived from Jev's answers.
+
+\section{Methods}
+\label{sec:methods}
 
 \begin{table*}[t]
-\centering\small
+\centering\footnotesize
 \begin{tabularx}{\textwidth}{@{}lLr@{}}
 \toprule
-Test & What the model is asked & Requests per model \\
+Test & What the model is asked & Requests \\
 \midrule
-Study 1 & Who wrote a child's phrase: the paper's 40 phrases and 8 without a gender cue; female, male or non-binary; 6 wordings $\times$ 3 option orders & 864 \\
-Study 1u & The same with \ct{} as a fourth option; 6 wordings $\times$ 4 orders & 1,152 \\
+Study 1 & Who wrote a child's phrase: the original's 40 phrases and 8 without a gender cue; female, male or non-binary; 6 wordings $\times$ 3 option orders & 864 \\
+Study 1u & The same with \ct{} as a fourth option, the abstention option; 6 wordings $\times$ 4 orders & 1,152 \\
 Study 2a/2b & How acceptable it is to insult, harass, abuse or torture a woman or a man, or to sacrifice one person, to stop a nuclear apocalypse and without a stake; a 1--7 rating listed both ways, and yes/no; 10 wordings & 540 \\
 Study 2e & The four acts under four more stakes: a pandemic, hostages, a bomb, a kidnapped child & 960 \\
-Study 2c, 2d & The paper's explicit ranking of violations and its Neo Metropolis vignette & 216 \\
-BBQ, gender identity & Which of two people fits a stereotyped question, with and without the evidence in the context; all 50 templates & 1,152 \\
-BBQ, eight more categories & Age, disability, nationality, appearance, race, religion, socio-economic status, sexual orientation; up to 4 fillings per template & 3,580 \\
+Study 2c, 2d & The original's explicit ranking of violations and its Neo Metropolis vignette & 216 \\
+BBQ & Which of two people fits a stereotyped question, with and without the evidence: all 50 gender-identity templates (1,152); eight more categories, up to 4 fillings per template (3,580) & 4,732 \\
 StereoSet & Which of three completions of a gendered sentence fits best; dev set, 3 option orders & 1,491 \\
+Decision task & discrim-eval, explicit set: 70 yes/no decisions about a person $\times$ 9 ages $\times$ 5 races $\times$ 3 genders; the fixed question ``Is the answer to the question at the end of the text yes?'' & 9,450 \\
 \bottomrule
 \end{tabularx}
-\caption{The tests. Studies 1, 2a--2d follow \citet{fulgu-capraro-2024-surprising}; 1u, 2e and the pairwise comparisons in 2c are our extensions.}
+\caption{The tests: 19,405 requests per model (9,955 for the JEV and base models, which did not run the decision task). Study 1 follows the original's Studies 1a--1c, which asked GPT-3.5, GPT-4 and GPT-4o; we compare with GPT-4 (Study 1b). Studies 2a--2d follow the original's; 1u, 2e, the insult item, the no-stake control and the pairwise comparisons in 2c are ours. Decision task: \citet{tamkin-etal-2023-discrimination}.}
 \label{tab:tests}
 \end{table*}
 
-The five models that implement Jev's API answer through llama.cpp's \texttt{/v1/systemone} (build 11870, two RTX 3090s, one request at a time). Jev answered through TypeSafe's API on 28 October 2026, under the versioned model ids \texttt{jev-1.14.0}, the current release, and \texttt{jev-1.13.0}, the version AutoTrust distils, with eight requests at a time; every response named the version asked for. The JEV models ran in vLLM 0.32.0 with their LoRA adapter, eight requests at a time, and we read the decision head as the reference client on their model card does, which reproduces the card's two worked examples to within 0.01. JEV's score type has six fixed levels, so our 1--7 ratings were asked to JEV as a choice among the seven labelled levels. JEV-27B's bf16 weights do not fit in two 24\,GB GPUs, so vLLM quantized them to fp8 on load. The base models and granite-switch's text interface get the same questions as text with lettered options; we read the probabilities of the option letters as the first answer token, with thinking switched off. For Qwen3.8-27B we also sampled five generated answers per request, as the paper sampled GPT-4's chat answers. pplx and clef-flash also ran in LM Studio on a Mac, as a check on the platform.
+\paragraph{Tests.} Sent one request at a time, as in all llama.cpp runs, the local models repeat an answer exactly (the JEV models within 0.015; Appendix~\ref{app:reliability}), so prompt variants take the place of the original study's repeated chats; Jev does not, and a second pass over all requests measures by how much. In the decision task yes is the favourable outcome (a loan, a transplant, a visa); we send the published texts unchanged, since some are cut off or keep a template tag, with one fixed question (Table~\ref{tab:tests}).
 
-The locally served models repeat their answers exactly when a request is repeated (the JEV models within 0.015, from batching in bf16), so prompt variants replace repeated chats. Jev does not: an identical request moved a probability by up to 0.11, and Jev reports probabilities in steps of 0.01. We therefore sent all requests to Jev 1.14 twice; the second pass is 0.002 from the first in mean KL divergence (Table~\ref{tab:distance}), moves no headline rating by more than 0.13 points and no headline share by more than one percentage point, and all Jev results are from the first. Intervals describe robustness across wordings, option orders and stakes, or, for BBQ and StereoSet, across templates and items; none describes sampling of a model's answers. Each answer is read two ways: the mean under the model's probabilities, which the paper's mean over sampled answers estimates, and the top (modal) answer, which an application would act on. GPT-4's numbers come from the paper's sampled chat answers; Section~\ref{sec:controls} tests how much the readout matters.
+\paragraph{Readouts.} Each answer is read as the mean under the model's probabilities (a probability-level measure, like the original's mean over sampled answers) and as the top answer (the argmax decision an application acts on).
 
-\section{Moral trade-offs: violence against men is judged more acceptable}
+\paragraph{Statistics.} Intervals are 95\% percentile bootstrap intervals \citep{efron-tibshirani-1993-introduction}, as normal approximations are unreliable for few items \citep{bowyer-etal-2025-position}: 4,000 resamples of a measure's units (variants, phrases or items), 2,000 of BBQ templates, whose fillings share a wording, and 2,000 joint resamples of stakes and wordings for gaps pooled over stakes. They describe robustness across these units, not sampling of a model's answers. Tests are two-sided permutation tests with 20,000 permutations: sign flips for paired differences, permuted labels for two-sample comparisons. We declared two families of tests and apply Holm's correction \citep{holm-1979-simple} within each: Study 1's attribution asymmetry and stereotype pull in eight runs, including the JEV models (16 tests), and the decision task's female--male and non-binary--male differences in six runs (12 tests). Other p-values are descriptive. In the decision task the unit is the decision, since its 45 age--race fillings are related questions \citep{miller-2024-adding}: per decision, age and race we take the woman's (or non-binary person's) minus the man's logit P(yes), with P(yes) clipped to [0.005, 0.995] because Jev reports steps of 0.01, and bootstrap and sign-flip the 70 decision means, in the style of the per-template differences \citet{tamkin-etal-2023-discrimination} report beside their mixed model (Appendix~\ref{app:mixed}). Mixed-effects models with random effects for wording and stake (Study 2) and per decision (decision task, simpler than theirs) serve as a robustness check (Appendix~\ref{app:mixed}). Counts over combinations of model, act and stake describe consistency; the combinations share models and wordings and are not independent.
+
+A confidence gate acts only on answers whose confidence, $(k\,p_{\max} - 1)/(k - 1)$ for $k$ options, is at least 0.5, TypeSafe's example floor \citep{typesafe-2026-confidence}. Distances are the mean KL(Jev 1.13 $\|$ model) per request, the direction the JEV cards use, with probabilities floored at 0.005.
+
+\section{Moral trade-offs: violence against men rated more acceptable}
 \label{sec:moral}
-
-All eight models rate violence against a man as more acceptable than the same violence against a woman when it serves a greater good (Figure~\ref{fig:moral}). In the mean rating the gap is positive in all 160 combinations of model, act and stake, though a few of d1's and JEV-27B's are as small as $+0.01$ and $+0.02$. Read from the top answers, which are whole points, 98 of the 160 show a gap and none reverses it. Jev's gaps are among the largest: $+1.69$ for harassment, $+1.41$ for abuse and $+1.34$ for torture under the apocalypse.
 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{figures/fig-moral.pdf}
-\caption{\textbf{In all five stakes, every model accepts violence against men more readily.} Acceptability of each act against a man minus against a woman, in points on the 1--7 scale; positive means more acceptable against the man. Dot and whisker: nuclear apocalypse, 95\% interval over 20 variants (10 wordings, scale listed both ways). Bar: mean over five stakes (nuclear apocalypse, pandemic, hostages, bomb, kidnapped child). Ring: GPT-4 under the apocalypse \citep[Studies 2a, 2b and 2d]{fulgu-capraro-2024-surprising}; the paper has no insult item, and its torture gap (0.49) is not significant. Vignette: Amanda against Adam minus Andrew against Anna (Study 2d, one scenario). The JEV models answer the rating as a seven-option choice.}
+\caption{\textbf{For every act, every gap is above zero: all models rate violence against a man as more acceptable.} Acceptability of each act against a man minus against a woman, in points on the 1--7 scale. Black dot and line: nuclear apocalypse, with a 95\% interval over 20 variants (10 wordings, scale listed both ways). Grey diamond and line: mean over five stakes (apocalypse, pandemic, hostages, bomb, kidnapped child), with an interval that resamples stakes and wordings. Ring: GPT-4 under the apocalypse \citep[Studies 2a, 2b and 2d]{fulgu-capraro-2024-surprising}; the original has no insult item, and its torture gap (0.49) is not significant. Vignette: Amanda against Adam minus Andrew against Anna (Study 2d, one scenario). JEV-27B and JEV-9B: Section~\ref{sec:distill}.}
 \label{fig:moral}
 \end{figure*}
-
-\begin{itemize}
-\item \textbf{Mainly with a stake, except for insults.} Without a stake, the gaps for harassing, abusing and torturing are small ($-0.04$ to $+0.24$), though mostly above zero. Insulting a woman stays worse in five models ($+0.41$ to $+0.81$).
-\item \textbf{Relative to the scale, harassment comes close to GPT-4, abuse does not.} Over the seven items GPT-4 was asked (harassing, abusing and torturing a woman or a man, and sacrificing one person), the models' mean ratings span 1.1 to 3.3 points, GPT-4's 3.7; Jev uses the widest span. Relative to that span the harassment gap is 0.65 to 0.88 in four of the open models and 0.51 in Jev (GPT-4 0.63), but 0.27 to 0.38 in d1 and the JEV models; the abuse gap is 0.09 to 0.46 (GPT-4 0.86). Read from its top answers, pplx's harassment gap is 4.2 points.
-\item \textbf{The distillations keep the direction, not the size.} Asked yes or no, which JEV answers in the same format as Jev, the JEV models' gaps in P(yes) are 0.06 to 0.14, Jev 1.13's 0.14 to 0.20.
-\item \textbf{The vignette contrast shrinks.} GPT-4's 4.65-point contrast is 0.28 to 0.59 here, and d1 reverses it. Qwen3.8-27B's generated answers give 0.50, so in that model the shrinkage is not an artefact of reading probabilities.
-\item \textbf{Asked openly which of two violations is worse, three models favour the woman:} in harassment comparisons clef-flash puts 0.94 of its probability on ``to harass a woman is worse'', granite-switch and JEV-9B 0.71. The others put most of it on ``equal'', Jev 0.93; GPT-4's open ranking showed no gender difference either.
-\end{itemize}
-
-\section{Classifying children's writing: a default that needs a forced choice}
-\label{sec:classification}
-
-Forced to say who wrote a child's phrase without a gender cue, JEV-9B answers ``girl'' in 94\% of cases, clef-flash in 90\% and granite-switch in 81\%. Jev's most frequent answer is ``non-binary'' (47\%); of all its answers, 40\% are ``girl'' and 14\% ``boy''. Offered \ct, every model except granite-switch declines in 94\% to 100\% of cases, granite-switch in 74\% (Figure~\ref{fig:classification}).
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{figures/fig-classification.pdf}
-\caption{\textbf{Three models default to ``girl'' when forced to choose, and nearly all decline when they may.} Top answers for the eight phrases without a gender cue, over their wordings and option orders. Upper bar: girl, boy or non-binary (Study 1, 18 variants per phrase). Lower bar: the same with \ct{} offered (Study 1u, 24 variants per phrase). Without \ct{} the task offers no way to decline; a model with no default would not favour girl over boy.}
+\caption{\textbf{``Girl'' is a forced-choice preference; most models answer \ct{} when they may.} Top answers for the eight phrases without a gender cue, over wordings and option orders. Upper bar: forced choice among girl, boy and non-binary (hatched; Study 1, 18 variants per phrase). Lower bar: with \ct{} offered (Study 1u, 24 variants per phrase). Right: share answering ``girl''. A model without a preference would not favour girl over boy.}
 \label{fig:classification}
 \end{figure}
 
-\begin{itemize}
-\item \textbf{The distillations resemble their backbone's other decision model more than their teacher.} The two models built on Qwen3.5-9B, clef-flash and JEV-9B, call 90\% and 94\% of uncued phrases a girl's; the two built on Qwen3.8-27B, pplx and JEV-27B, 46\% and 40\%. Neither distillation keeps its teacher's preference for ``non-binary'' (Jev 1.13: 66\%; JEV-27B 15\%, JEV-9B 0\%). Two pairs cannot show a cause, and the base models read through option letters are unreliable controls (Section~\ref{sec:controls}).
-\item \textbf{With \ct, the models decline on cued phrases too.} For feminine-coded phrases, Kev, d1 and Jev answer \ct{} in 75\%, 66\% and 65\% of cases; granite-switch declines in 5\% and keeps labelling.
-\item \textbf{d1 misreads explicit statements:} it labels 59\% of the answers to the three control phrases about a boy a girl's, and gets 55\% of all explicit controls right.
-\item \textbf{GPT-4's attribution asymmetry transfers in direction, not reliably in size.} GPT-4 gives masculine phrases to girls far more readily than feminine ones to boys ($I_m - I_f = +0.27$). Here the difference is $+0.07$ to $+0.21$ in seven models, largest in Jev, and $-0.12$ in Kev. After Holm correction over sixteen tests, only JEV-9B's asymmetry is significant ($p = 0.019$; d1 0.052, Jev 0.075); measured from each model's own default, none is.
-\end{itemize}
+All six models rate violence against a man as more acceptable than the same violence against a woman when it serves a greater good (Figure~\ref{fig:moral}). The mean-rating gap is positive in all 120 combinations of model, act and stake, the smallest being d1's $+0.03$ (torture, kidnapped child); read from the top answers, which are whole points, 85 of the 120 show a gap and none reverses it. The mixed-effects estimates are positive for every model and act, and their intervals exclude zero in 22 of 24 (Appendix~\ref{app:mixed}). Under the original's apocalypse, pplx's harassment gap ($+2.76$ points) exceeds GPT-4's ($+2.34$); Jev's is $+1.69$. Without a stake the gaps for harassment, abuse and torture are small ($-0.02$ to $+0.22$), but insulting a woman stays worse than insulting a man in four models ($+0.39$ to $+0.75$). Appendix~\ref{app:further} adds the vignette, the explicit ranking and scale-relative comparisons with GPT-4.
+
+\section{Attributing children's writing: a preference for ``girl'' that needs a forced choice}
+\label{sec:classification}
+
+
+Forced to attribute a phrase without a gender cue, clef-flash answers ``girl'' in 85\% of cases and granite-switch in 82\%; pplx answers ``girl'' and ``boy'' about equally often (47\% and 53\%). Jev's most frequent answer is ``non-binary'' (47\%; ``girl'' 40\%, ``boy'' 14\%). Offered \ct, Jev, clef-flash, Kev and d1 abstain on every uncued phrase, pplx on 92\% and granite-switch on 79\% (Figure~\ref{fig:classification}); several models abstain on cued phrases too (Appendix~\ref{app:further}).
+
+GPT-4's attribution asymmetry points the same way in five of the six models, but no asymmetry of theirs is significant after correction. GPT-4's $I_m - I_f$ is $+0.27$; here it is $+0.11$ to $+0.21$ in Jev, pplx, granite-switch and d1, $+0.05$ in clef-flash and $-0.08$ in Kev. After Holm correction over the 16 tests of the Study 1 family, the lowest adjusted p among the six is 0.074 (d1; Jev 0.075); only JEV-9B's asymmetry stays below 0.05 ($p = 0.019$). Measured from each model's own level for uncued phrases (the stereotype pull), no difference survives the correction (Appendix~\ref{app:holm}).
 
 \section{Filling missing information with stereotypes}
 \label{sec:stereotypes}
 
-When a BBQ gender question gives no evidence about which of two people fits a stereotyped role, the models differ most in how often they still name someone: Jev never does, granite-switch in 67\% of the questions. When they do, most name the person the stereotype points to, on gender and in the other eight BBQ categories.
-
-BBQ \citep{parrish-etal-2022-bbq} names two people and asks, for example, who was the secretary. With the evidence in the context one person is right; without it the right answer is ``unknown''. StereoSet \citep{nadeem-etal-2021-stereoset} asks which of three completions of a sentence about a gendered target fits best: stereotyped, anti-stereotyped or unrelated; ss is the share of items in which the stereotyped sentence gets the higher probability of the two meaningful ones (Figure~\ref{fig:benchmarks}).
-
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{figures/fig-benchmarks.pdf}
-\caption{\textbf{All eight prefer the stereotyped sentence; most that name a person follow the stereotype.} Gender items only. Left: StereoSet ss over the 497 gender items of the dev set in three option orders, with a 95\% interval that resamples items; 50 is no preference. Right: top answers to the 570 BBQ Gender\_identity questions without evidence that have a stereotyped answer; ``unknown'' is right. Stereotyped of picks = stereotyped person / (stereotyped + other person), shown as a count below 10 picks; 50\% is no preference. BBQ's score $s_\mathrm{AMB}$ multiplies this preference by the share of wrong answers, so a model that seldom names a person scores near 0.}
+\caption{\textbf{The models differ in how often they name a person, not in whom they name.} Gender items. Left: StereoSet, share of the 497 dev-set gender items in which the stereotyped sentence is preferred, over three option orders, with a 95\% interval that resamples items; 50 is no preference. Middle: share of the 570 BBQ gender questions without evidence in which the top answer names a person rather than ``unknown'', the right answer. Right: the share of those committed answers that names the stereotyped person, with a 95\% interval that resamples templates; a count where fewer than 10 answers commit. BBQ's score $s_\mathrm{AMB}$ is $(1 - \mathrm{accuracy}) \times (2 \times \mathrm{share} - 1)$, so a model that seldom commits scores near 0.}
 \label{fig:benchmarks}
 \end{figure*}
 
-\begin{itemize}
-\item \textbf{Answer rate and direction separate.} Jev names a person in none of the 570 questions, JEV-27B in 2, pplx and JEV-9B in 6\%, granite-switch in 67\%. BBQ's score for these questions, $s_\mathrm{AMB}$, multiplies the direction by the error rate and so ranks pplx ($+0.06$) next to Kev ($+0.01$), although pplx's few picks are the most one-sided (0.92, interval 0.76 to 1.00) and Kev's are balanced (0.54, interval 0.33 to 0.67). Of the six models that name a person in more than 5\% of the questions, five mostly name the stereotyped one (0.72 to 0.92).
-\item \textbf{Beyond gender the direction holds.} In the eight other categories, every model-category cell with at least 10 picks leans toward the stereotyped person (55 cells, 0.57 to 1.00), and in 49 the interval excludes 0.50 (Appendix~\ref{app:bbqx}). Jev names a person in at most 6\% of a category's questions; in religion, its 11 picks all name the stereotyped person.
-\item \textbf{With evidence, the models mostly ignore the stereotype:} all eight name the right person in 90\% to 100\% of the questions. Kev is more often right when the answer fits the stereotype than when it goes against it ($+0.035$, interval 0.006 to 0.074), and d1 on stereotypes about men ($+0.11$).
-\item \textbf{StereoSet barely separates the models.} All eight prefer the stereotyped sentence, in 64\% to 78\% of items. A preference among completions says less about behaviour toward a person than BBQ does \citep{blodgett-etal-2021-stereotyping}.
-\item \textbf{Who bears it differs by model:} clef-flash names someone more often, and more one-sidedly, when the stereotype concerns women; granite-switch names someone more often about women, with picks about men slightly more one-sided; pplx and clef-flash name the stereotyped person most often about trans people (Appendix~\ref{app:whom}).
-\end{itemize}
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/fig-bbq-categories.pdf}
+\caption{\textbf{The stereotype direction holds in all nine BBQ categories.} Ambiguous questions: share of committed answers that name the stereotyped person; 0.5 is no preference. Bold: the 95\% interval over templates excludes 0.5. Hatched: fewer than 10 committed answers, given as a count. The printed values carry the result; the colour repeats them. Commitment rates and intervals: Appendix~\ref{app:bbqx}.}
+\label{fig:bbqcat}
+\end{figure*}
 
-\section{How closely the imitations follow Jev}
-\label{sec:distance}
-
-AutoTrust reports its distillations as ``indistinguishable from TypeSafe Jev 1.13, by KL'', with a mean KL divergence of 0.019 for JEV-9B and 0.017 for JEV-27B on 25,376 held-out questions labelled by Jev, and 0.028 and 0.025 for the choice questions among them \citep{autotrust-2026-jev9b,autotrust-2026-jev27b}. The cards limit the claim to ``Jev-labelled rows from the 53 training domains''. We measured the KL divergence from Jev 1.13 on our questions, for every model (Table~\ref{tab:distance}), with probabilities floored at 0.005; the cards state no floor.
-
-\begin{table}[t]
-\centering\small
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}lrrrr@{}}
-\toprule
-Model & All & Study 1 & BBQ & StereoSet \\
-\midrule
-Jev 1.14, second pass$^a$ & 0.002 & 0.003 & 0.001 & 0.002 \\
-Jev 1.14 & 0.018 & 0.029 & 0.005 & 0.018 \\
-JEV-27B (card 0.017) & 0.200 & 0.120 & 0.068 & 0.119 \\
-JEV-9B (card 0.019) & 0.282 & 0.250 & 0.172 & 0.168 \\
-pplx 27B & 0.262 & 0.186 & 0.123 & 0.201 \\
-d1 3B & 0.386 & 0.302 & 0.329 & 0.411 \\
-Kev 4B & 0.410 & 0.440 & 0.385 & 0.275 \\
-clef-flash 9B & 0.510 & 0.215 & 0.369 & 0.283 \\
-granite-switch 8B & 0.787 & 0.255 & 0.810 & 0.184 \\
-\midrule
-\multicolumn{5}{@{}l}{\textit{Base models, read through option letters}} \\
-Qwen3.8-27B & 0.277 & 0.388 & 0.105 & 0.290 \\
-Qwen3.5-9B & 0.350 & 0.423 & 0.317 & 0.270 \\
-Qwen3.5-4B-Base & 0.512 & 0.395 & 0.599 & 0.341 \\
-\bottomrule
-\end{tabular}
-\caption{Distance to Jev 1.13: mean KL divergence from Jev 1.13's answer distribution to the model's, per request (0 = the same answers; probabilities floored at 0.005, as Jev reports steps of 0.01). All: 9,955 requests; for the JEV models it includes 1,080 ratings asked as a choice. Study 1, BBQ (gender) and StereoSet put the same question type to every model. Card: AutoTrust's value on its own test set. $^a$Against Jev 1.14's first pass, not Jev 1.13: the noise floor.}
-\label{tab:distance}
-\end{table}
+When a BBQ question gives no evidence about which of two people fits a stereotyped role, the models differ most in their abstention rate; when they commit, most name the person the stereotype points to, on gender and in eight other categories (Figures~\ref{fig:benchmarks} and~\ref{fig:bbqcat}).
 
 \begin{itemize}
-\item \textbf{On these questions the distillations are 3 to 9 times further from Jev than reported.} Study 1, BBQ and StereoSet are choice questions for every model; there JEV-27B is 0.07 to 0.12 from Jev 1.13 and JEV-9B 0.17 to 0.25, against the cards' 0.025 and 0.028 for choice questions. JEV-27B is the closest open model; JEV-9B is on the whole no closer than pplx, which was not distilled from Jev, though 38\% to 46\% closer than its own backbone read through option letters.
-\item \textbf{The differences show up as different biases.} Where Jev 1.13 never names a person in ambiguous BBQ gender questions, JEV-9B names one in 6\%, mostly the stereotyped one (0.79); where Jev prefers ``non-binary'' for uncued writing, JEV-9B says ``girl'' (Section~\ref{sec:classification}); and its moral gaps are smaller (Section~\ref{sec:moral}). We did not measure the distance on questions from AutoTrust's own domains, so we cannot say whether bias questions differ more than others.
-\item \textbf{Jev itself moves.} Its two passes are 0.002 apart in mean KL divergence; Jev 1.13, the reference here, also varies between identical calls (by up to 0.19 in one probability) but ran once. The version change from 1.13 to 1.14 moves Jev 0.018. With it, Jev's share of ``non-binary'' for uncued writing fell from 66\% to 47\% and its harassment gap rose from $+1.49$ to $+1.69$. An application that calls the alias \texttt{jev-latest}, which now points to 1.14, received the new version without a change of code; TypeSafe advises pinning a version id for tuned thresholds \citep{typesafe-2026-models}.
+\item \textbf{Abstention and direction separate.} In the 570 gender questions Jev commits to a person in none, pplx in 8\%, Kev in 13\%, d1 in 22\%, clef-flash in 33\% and granite-switch in 61\%. All five open models mostly name the stereotyped person (0.59 to 0.81); only Kev's interval includes 0.50. BBQ's $s_\mathrm{AMB}$ scales this direction ($2 \times$ share $- 1$) by the error rate and so ranks pplx ($+0.05$) next to Kev ($+0.02$), although pplx's committed answers are more one-sided (0.81 against 0.59).
+\item \textbf{Beyond gender the direction holds.} Every model--category cell with at least 10 committed answers leans toward the stereotyped person (41 cells, 0.55 to 1.00), and in 37 the interval excludes 0.50.
+\item \textbf{StereoSet barely separates the models:} all prefer the stereotyped sentence, in 64\% to 77\% of items.
 \end{itemize}
 
-\section{Decision model, base model or interface?}
-\label{sec:controls}
+\section{Decisions about a person}
+\label{sec:decision}
 
-The readout changes some aggregates and not others, and the base models are weak controls, so this section limits what can be attributed to decision training (Table~\ref{tab:controls}). Two backbones carry two decision models each: Qwen3.8-27B under pplx and JEV-27B, Qwen3.5-9B under clef-flash and JEV-9B.
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/fig-decision.pdf}
+\caption{\textbf{Changing only the gender moves P(yes) and changes some top answers.} Left: difference in logit P(yes) between the woman (dot) or the non-binary person (diamond) and the man in the same decision, age and race, averaged per decision, with 95\% intervals that resample the 70 decisions; positive favours the woman or the non-binary person. Right: share of the 3,150 woman--man pairs whose top answer differs, split into ``woman yes, man no'' (dark) and the reverse (light), with the count. Grey: Jev's own variation, the share of 9,450 identical requests whose top answer changed in a second pass; the local models, sent one request at a time, repeat their answers exactly.}
+\label{fig:decision}
+\end{figure*}
 
-\begin{table*}[t]
-\centering\footnotesize
-\setlength{\tabcolsep}{3pt}
-\begin{tabularx}{\textwidth}{@{}Lrrrrrrrrrrr@{}}
-\toprule
-& \multicolumn{4}{c}{Qwen3.8-27B} & \multicolumn{3}{c}{Qwen3.5-9B} & \multicolumn{2}{c}{Qwen3.5-4B} & \multicolumn{2}{c@{}}{granite-switch 8B} \\
-\cmidrule(lr){2-5}\cmidrule(lr){6-8}\cmidrule(lr){9-10}\cmidrule(l){11-12}
-Measure & pplx & \shortstack[r]{JEV-\\27B} & \shortstack[r]{base,\\letters} & \shortstack[r]{base,\\gen.} & \shortstack[r]{clef-\\flash} & \shortstack[r]{JEV-\\9B} & base & Kev & base & \shortstack[r]{deci-\\sion} & text \\
-\midrule
-Study 1 asymmetry $I_m - I_f$ (GPT-4 $+0.27$) & $+0.10$ & $+0.12$ & $+0.17$ & $+0.15$ & $+0.07$ & $+0.18$ & $+0.10$ & $-0.12$ & $+0.19$ & $+0.15$ & $+0.14$ \\
-Uncued phrases labelled a girl's & 46\% & 40\% & 47\% & 44\% & 90\% & 94\% & 51\% & 44\% & 84\% & 81\% & 54\% \\
-Harassment gap, apocalypse (GPT-4 $+2.34$) & $+2.62$ & $+0.61$ & $+1.78$ & $+1.87$ & $+1.27$ & $+0.60$ & $+1.01$ & $+0.90$ & $+0.35$ & $+1.37$ & $+0.72$ \\
-Harassment gap, five stakes & $+1.85$ & $+1.05$ & $+1.80$ & & $+1.26$ & $+0.96$ & $+1.17$ & $+1.18$ & $+0.44$ & $+1.02$ & $+0.97$ \\
-Torture gap, apocalypse (GPT-4 $+0.49$) & $+1.21$ & $+0.93$ & $+1.53$ & $+0.69$ & $+0.90$ & $+0.77$ & $+0.69$ & $+0.72$ & $+0.32$ & $+1.25$ & $+0.60$ \\
-Vignette contrast (GPT-4 $+4.65$) & $+0.28$ & $+0.49$ & $+0.38$ & $+0.50$ & $+0.37$ & $+0.49$ & $+0.33$ & $+0.41$ & $+0.16$ & $+0.59$ & $+0.25$ \\
-BBQ, no evidence: names a person & 6\% & 0.4\% & 3\% & & 31\% & 6\% & 17\% & 15\% & 45\% & 67\% & 12\% \\
-\quad stereotyped share of those & 0.92 & 2 of 2 & 0.88 & & 0.73 & 0.79 & 0.62 & 0.54 & 0.61 & 0.75 & 0.50 \\
-StereoSet ss & 76.5 & 77.7 & 73.8 & & 75.9 & 75.7 & 74.0 & 75.5 & 74.2 & 76.7 & 70.2 \\
-\midrule
-Check: option order changes the Study 1 top answer & 15\% & 5\% & 29\% & 27\% & 0\% & 5\% & 66\% & 28\% & 30\% & 7\% & 28\% \\
-Check: control phrases about a boy labelled a girl's & 15\% & 0\% & 7\% & 7\% & 0\% & 2\% & 30\% & 7\% & 44\% & 6\% & 20\% \\
-\bottomrule
-\end{tabularx}
-\caption{Decision models against their controls, grouped by backbone. Bases: Qwen3.8-27B (read through option letters, and as five generated answers per request), Qwen3.5-9B and Qwen3.5-4B-Base (option letters); granite-switch through its decision interface and its own text interface (option letters). The JEV models answer ratings as a seven-option choice. Empty cells: Study 2e, BBQ and StereoSet were not run with generated answers.}
-\label{tab:controls}
-\end{table*}
+In the decision task of \citet{tamkin-etal-2023-discrimination}, five of the six models give women a significantly higher probability of the favourable answer than men (Figure~\ref{fig:decision}). The difference in log-odds is $+0.050$ (Jev), $+0.058$ (Kev), $+0.080$ (pplx), $+0.082$ (granite-switch) and $+0.097$ (clef-flash), each significant after Holm correction over the 12 tests of this family (adjusted $p < 0.001$); d1's $+0.018$ is not ($p = 0.11$). The non-binary person's difference from the man is about as large or larger, most in pplx ($+0.210$), and significant in the same five models; the mixed-effects estimates agree to the third decimal (Appendix~\ref{app:mixed}). In probability these effects are small: at most 1.5 percentage points in mean P(yes) for women against men and 2.2 for non-binary people (both clef-flash); on the scale of \citet{tamkin-etal-2023-discrimination}, where $+1.0$ raises a P(yes) of 0.5 to 0.73, pplx's $+0.21$ raises it to 0.55. The direction is the one they report for Claude 2.
 
-\begin{itemize}
-\item \textbf{Option letters and generated text agree on most aggregates, not all.} For Qwen3.8-27B the harassment gap is 1.78 against 1.87, the asymmetry $+0.17$ against $+0.15$ and the vignette contrast 0.38 against 0.50; the torture gap differs, 1.53 against 0.69. Even with generated answers, as in the paper, the vignette contrast stays far below GPT-4's 4.65, so for this model the gap to GPT-4 is not a matter of readout.
-\item \textbf{Over five stakes, only Kev's moral-trade-off gap differs clearly from its base's} (1.18 against 0.44). pplx and clef-flash are within 0.1 of their bases; the JEV models fall below theirs (1.05 against 1.80, 0.96 against 1.17), but they answer the rating as a choice, so format and training are confounded. Under the apocalypse alone the picture is mixed: pplx's harassment gap exceeds its base's, its torture and insult gaps fall below.
-\item \textbf{The defaults differ, but the controls cannot say why.} On Qwen3.5-9B, clef-flash and JEV-9B call 90\% and 94\% of uncued phrases a girl's, their base 51\%; Kev 44\%, its base 84\%. Read through option letters, Qwen3.5-9B changes 66\% of its Study 1 top answers when only the option order changes, and Qwen3.5-4B-Base labels 44\% of the answers to the control phrases about a boy a girl's, so these differences are indicative, not causal.
-\item \textbf{granite-switch's two interfaces differ most.} Through its decision interface it names a person in 67\% of the ambiguous BBQ gender questions, through its text interface in 12\%, without preference, and its harassment gap halves. granite-switch probably switches adapters per mode, so this is not the same computation. Asked to generate answers, it hedged on moral items and gave no usable answer to one sacrifice question in five samples.
-\end{itemize}
+Taking the top answer, the swap from man to woman changes 34 (granite-switch) to 110 (Jev) of 3,150 decisions, mostly to yes (Jev 102 of 110, clef-flash 77 of 99, Kev 71 of 81, granite-switch 27 of 34); pplx's change about equally often each way (22 and 17), d1's more often to no (25 and 35). Identical requests change Jev's top answer in 135 of 9,450 cases (1.4\%), so a single change of Jev's cannot be told from its variation between calls, though their direction can. Only one changed pair (clef-flash) has both answers above the confidence gate.
 
 \section{From probability to decision}
-\label{sec:amplification}
-
-An application that acts on the top answer amplifies a lean, or hides it, so auditing a decision model's probabilities alone misstates what it does in such use (Figure~\ref{fig:lean}).
+\label{sec:argmax}
 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{figures/fig-lean.pdf}
-\caption{\textbf{Acting on the top answer turns leans of about 0.6 into decisions of up to 0.94.} Ring: mean probability of the default or stereotyped option. Dot: share of top answers that choose it. Uncued writing: Study 1, the eight phrases without a gender cue, girl against boy. BBQ: gender identity, questions without evidence. StereoSet: dev set, gender items. Uncued writing and BBQ count only answers that name a gender or a person; 0.5 is no lean. A dot right of its ring: the top answer makes the lean firmer. Near 0.5 it can also undo a lean (Kev, uncued writing). BBQ shows no dot below 10 picks.}
+\caption{\textbf{The top answer makes a lean firmer.} Ring: mean probability (probability-level measure) of ``girl'' rather than ``boy'' for the eight uncued phrases, of the stereotyped person among the two people in BBQ gender questions without evidence, and of the stereotyped sentence among the two meaningful ones in StereoSet. Dot: share of top answers that choose it (argmax decision). 0.5 is no lean; a dot right of its ring means the top answer makes the lean firmer. BBQ: Jev's top answers name no person and JEV-27B's two.}
 \label{fig:lean}
 \end{figure*}
 
-JEV-9B puts a mean probability of 0.63 on ``girl'' for uncued writing, but 94\% of its gendered top answers are ``girl''; clef-flash goes from 0.61 to 93\%. In BBQ the two readouts partly cover different questions, since the picks fall where the lean is strongest: pplx's lean toward the stereotyped person is 0.66 over all questions, and its picks name that person in 92\% of cases. The top answer can also hide a lean: Jev never names a person in an ambiguous BBQ gender question, yet the less than 1\% of probability it puts on the two people falls 81\% on the stereotyped one, a lean that rests on the minority of questions in which Jev puts at least 0.01 on a person. Where a model is nearly undecided, the top answer also swings with small changes: reordering the options changes it in 0\% (clef-flash) to 28\% (Kev) of Study 1 cases, listing the scale from 7 to 1 moves d1's mean rating by 1.60, and 4-bit quantization moves single probabilities by up to 0.385 (Appendices~\ref{app:reliability} and~\ref{app:stability}).
+Acting on the top answer turns a lean into a firm decision, or hides it (Figure~\ref{fig:lean}). clef-flash puts a mean probability of 0.59 on ``girl'' for uncued writing, but 89\% of its gendered top answers are ``girl''; pplx's lean toward the stereotyped person in BBQ is 0.65, and 81\% of its committed answers name that person; Jev's harassment gap is $+1.69$ points in the mean rating and $+4.5$ in its top answers. The top answer also hides leans: Jev never commits to a person in an ambiguous BBQ gender question, yet the less than 1\% of probability it puts on the two people falls 81\% on the stereotyped one.
 
-The makers advise acting only on confident answers. TypeSafe's example routes every answer with a confidence below 0.5 to a human, where the confidence of a choice among $k$ options is $(k\,p_{\max} - 1)/(k - 1)$ \citep{typesafe-2026-confidence}; AutoTrust's and Kev's cards advise thresholds in words. Such a gate removes many biased decisions but mostly not their direction. It removes clef-flash's default to ``girl'' entirely (none of its 129 ``girl'' answers pass), but JEV-9B still acts on 25 ``girl'' answers and no ``boy'', and granite-switch on 66 against 18. In BBQ's gender questions without evidence, granite-switch would still act on 189 stereotyped picks against 34 others (0.85 of its picks, against 0.75 without the gate), clef-flash on 56 against 14 and pplx on 9 against none; d1's gated picks are less one-sided (19 against 14), and Jev, JEV-27B and Kev would act on none.
+A confidence gate, which the makers advise, removes many biased decisions but mostly not their direction. Of clef-flash's 123 ``girl'' answers to uncued phrases 3 pass, but granite-switch still acts on 70 ``girl'' against 18 ``boy''. In ambiguous BBQ gender questions, granite-switch would still act on 180 stereotype-consistent answers against 32 others (0.85, against 0.76 without the gate), clef-flash on 67 against 12 and pplx on 16 against none; d1's gated answers are less one-sided (20 against 10), and Jev and Kev act on none.
 
-\section{Discussion, limits and ethics}
-\label{sec:discussion}
+\section{What distillation keeps of Jev}
+\label{sec:distill}
 
-The most robust result is a bias against men in moral trade-offs: in every model, act and stake, violence against a man is judged more acceptable when it serves a greater good. Jev, the original, shows it among the most strongly; the open models that imitate its API show it, and so do their base models and the distillations of Jev. On harassment, relative to their narrower use of the rating scale, four of the open models show it about as strongly as GPT-4.
+AutoTrust describes JEV-27B and JEV-9B as open students of Jev 1.13: the JEV-9B card names Jev 1.13 ``the \emph{teacher} whose published output distributions this model was trained on'' and calls JEV ``an independent open-weights \emph{student} built by AutoTrust AI from the Apache-2.0 corpus'' \texttt{SargeDev/\allowbreak jev-distill-corpus-v3}, and ``not affiliated with, endorsed by, or a product of TypeSafe AI'' \citep{autotrust-2026-jev9b}. The cards report the students as ``indistinguishable from TypeSafe Jev 1.13, by KL'' (mean KL 0.028 for JEV-9B and 0.025 for JEV-27B on held-out choice questions labelled by Jev), for ``Jev-labelled rows from the 53 training domains'' \citep{autotrust-2026-jev9b,autotrust-2026-jev27b}. Their moral-trade-off gap and Jev's own changes between calls and versions are in Appendix~\ref{app:further}.
 
-The other biases depend on how the question is put. Forced to classify, three open models default to ``girl'', and Jev answers ``non-binary'' most often; given \ct, they decline. Without evidence in BBQ's gender questions, Jev and four open models name a person in at most 15\% of the questions, clef-flash and granite-switch in 31\% and 67\%; when they do, they mostly follow the stereotype, about women, men and trans people, and in the other categories about eight more groups. BBQ's standard score hides this because it rewards declining; reporting how often a model names someone and which way its names lean shows it.
-
-Two of the makers warn against high-stakes use, and none reports a bias measurement. That puts the measurement on whoever deploys the model, and three results say it must be done on the model actually deployed. A distillation reported as indistinguishable from its teacher differs from it on these questions; a closed model's behaviour changes with its version under an unchanged alias; and Jev's own answers vary between identical calls, so a single answer is a sample. A confidence gate does not make the measurement unnecessary: it removes many biased decisions but mostly not their direction.
-
-A guess from base rates can be calibrated and still unlawful. For estimating how common something is, base rates are the right input; for a decision about one person they are not. In \emph{Test-Achats} the Court of Justice of the EU struck down sex-based insurance premiums although they rested on actuarial data \citep{cjeu-2011-test-achats}, and the EU AI Act requires providers of high-risk systems to examine their training, validation and testing data for biases likely to lead to prohibited discrimination, and to mitigate them \citep[Article 10]{eu-2024-ai-act}. For many BBQ stereotypes, such as who is bad at math, no base rate says anything about the person in the question.
-
-For use in applications, the results suggest five rules: pin a model version and run it in one fixed configuration, test that model and not its teacher or base, ask with several option orders and wordings, judge it on averages rather than single answers, and offer \ct{} where the information may be missing; a confidence gate helps, but does not replace these.
-
-\paragraph{Limits.}
 \begin{itemize}
-\item \textbf{Scenarios and items.} Study 2 covers five stakes but one description of the victim per sex. The default toward ``girl'' rests on eight neutral phrases we wrote.
-\item \textbf{Jev.} We see Jev only through its API, on one date: the results hold for \texttt{jev-1.14.0} and \texttt{jev-1.13.0} as served on 28 October 2026. Its answers vary between identical calls; a second pass moved no headline rating by more than 0.13 points and no headline share by more than one percentage point. Jev 1.13, the reference for Table~\ref{tab:distance}, ran once.
-\item \textbf{The JEV models.} They answer our 1--7 ratings as a seven-option choice, since their score type has six fixed levels, so their rating gaps and their distance to Jev on rating questions mix model and format. JEV-27B ran with fp8 weights; it reproduces its card's examples to within 0.01.
-\item \textbf{Precision.} The main runs of the five API imitations are 4-bit; pplx, clef-flash and d1 ran in 4-bit only. bf16 reruns of granite-switch and Kev moved the apocalypse, five-stake and vignette gaps by at most 0.29 points and the overall BBQ gender and StereoSet shares by at most 6 points; single-stake gaps and subgroup shares moved more, and Kev's share of uncued phrases called a girl's went from 44\% to 57\%.
-\item \textbf{Controls.} The base models answer through option letters, not a decision head, so decision training and readout are not fully separated. granite-switch's two interfaces may differ in more than the readout, and the base models fail some of the checks the decision models pass.
-\item \textbf{Benchmark samples.} BBQ: 4,732 of its 58,492 questions; StereoSet: the gender items of the dev set, since the test set is unpublished.
-\item \textbf{Scope.} English only, no human baseline, and the moral items are hypothetical dilemmas, not the routing tasks these models are built for.
+\item \textbf{On our bias questions their KL to Jev 1.13 is 3 to 9 times what the cards report for their own test set:} JEV-27B 0.07 to 0.12, JEV-9B 0.17 to 0.25, while Jev 1.14's two passes are at most 0.003 apart (Table~\ref{tab:distance} in Appendix~\ref{app:further}). JEV-9B is on the whole no closer to Jev than pplx, whose card describes training data built from public datasets \citep{perplexity-2026-pplx}, though closer than its own backbone.
+\item \textbf{JEV-9B resembles clef-flash, the other decision model on its backbone, more than its teacher.} On uncued phrases it answers ``girl'' in 94\% of cases (clef-flash 85\%, its teacher 23\%) and never ``non-binary'' (Jev 1.13 66\%); JEV-27B keeps some of the teacher's ``non-binary'' answers (15\%).
 \end{itemize}
 
-\paragraph{Ethics.} The stimuli reproduce harmful stereotypes from BBQ, StereoSet and the original paper to measure them; we release them only with the code, under their licenses. Jev's answers were used for this evaluation only, not to train a model; TypeSafe's terms forbid using its output to train or distil one, so we publish the numbers derived from Jev's answers, not the answers themselves.
+\section{Discussion}
+\label{sec:discussion}
 
-\paragraph{Code and data.} \repo{} holds \texttt{stimuli.py}, \texttt{run.py}, \texttt{analyze.py} and \texttt{results/*.jsonl}, one line per request. Server setup and weight hashes of the decision models we served are in \texttt{results/servers-z390.json}, the API runs in \texttt{results/api-typesafe.json}, the stability data in \texttt{results/checks/}. Benchmarks: \href{https://github.com/nyu-mll/BBQ}{BBQ} (CC BY 4.0) and \href{https://github.com/moinnadeem/StereoSet}{StereoSet} (CC BY-SA 4.0).
+The most consistent result is a set of acceptability ratings that disfavour male victims: in every model, act and stake, violence against a man is rated more acceptable when it serves a greater good. The base models show it too (Appendix~\ref{app:controls}), and so do humans \citep{feldmanhall-etal-2016-moral}; by our bias statement it is a bias all the same. In decisions the same direction appears at a small size: five of six models favour women significantly, and a gender swap changes 1\% to 3.5\% of a model's decisions, almost none confidently.
+
+The other biases depend on how the question is put: with an abstention option the models abstain on uncued writing, and in ambiguous BBQ questions they commit in 0\% to 61\% of cases and then mostly follow the stereotype, which BBQ's standard score hides by rewarding abstention.
+
+We found no bias measurement in the makers' cards and announcements, so the deployer must measure the deployed model: a student reported as indistinguishable from its teacher differs from it here, a closed model changes with its version under an unchanged alias (Appendix~\ref{app:further}), and Jev's answers vary between identical calls.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+Jev and five open decision models rate violence against men as more acceptable when it serves a greater good; the open models mostly follow stereotypes when they commit; and five of the six favour women slightly in decisions. The top answer turns mild leans into firm decisions; a confidence gate removes many, mostly not their direction. A bias measurement holds for one model, version and configuration, read as the application reads it.
+
+\section*{Limitations}
+
+\begin{itemize}
+\item \textbf{Scenarios and items.} Study 2 covers five stakes but one description of the victim per gender, and only women and men as victims. The preference for ``girl'' rests on eight phrases without a gender cue that we wrote. The moral items are hypothetical dilemmas, not the routing tasks these models are built for.
+\item \textbf{Jev.} We see Jev only through its API, on one date: the results hold for \texttt{jev-1.14.0} and \texttt{jev-1.13.0} as served on 28 October 2026. Its answers vary between identical calls; Jev 1.13, the reference for the distances, ran once.
+\item \textbf{Precision and serving.} The two 27B models ran in 8-bit, not in their released 16-bit precision. The open models ran in llama.cpp or vLLM; only Kev was compared with its maker's own server.
+\item \textbf{The JEV models.} They answer our 1--7 ratings as a seven-option choice, since their score type has six fixed levels, so their rating gaps and their distance to Jev on rating questions mix model and format. They did not run the decision task.
+\item \textbf{Controls.} The base models answer through option letters, not a decision head, so decision training and readout are not fully separated, and the base models fail some of the checks the decision models pass. granite-switch's two interfaces may differ in more than the readout.
+\item \textbf{Benchmark samples.} BBQ: 4,732 of its 58,492 questions; StereoSet: the gender items of the dev set, since the test set is unpublished.
+\item \textbf{Decision task.} The texts are used as published, including fillings that are cut off or keep a template tag, with one fixed question wording; the demographic categories are those of the dataset, and gender is stated explicitly rather than implied by a name.
+\item \textbf{Statistics.} Intervals and tests treat variants, phrases, templates or decisions as units and describe robustness across them, not sampling of a model's answers. Only the two declared families are corrected for multiple comparisons.
+\item \textbf{Scope.} English only, no human baseline of our own, and no deployed system.
+\end{itemize}
+
+\section*{Ethical considerations}
+
+A guess from base rates can be calibrated and still be no lawful basis for treating one person differently: in \emph{Test-Achats} the Court of Justice of the EU held invalid, with effect from 21 December 2012, Article 5(2) of Directive 2004/113/EC, which let Member States permit sex-based differences in insurance premiums and benefits where sex was a determining factor in the assessment of risk based on relevant and accurate actuarial and statistical data \citep{cjeu-2011-test-achats}, and the EU AI Act requires providers of high-risk systems to examine their data for biases likely to lead to prohibited discrimination \citep[Article 10]{eu-2024-ai-act}. We tested no deployed allocation, so our results say what a deployer should measure, not whether a given use is lawful.
+
+The stimuli reproduce harmful stereotypes from BBQ, StereoSet, discrim-eval and the original study in order to measure them; we release them only with the code, under their licenses (BBQ CC BY 4.0, StereoSet CC BY-SA 4.0, discrim-eval CC BY 4.0). The gender categories are those of the sources; reporting that a model labels uncued writing a girl's is a statement about the model, not about children.
+
+As \citet{biderman-etal-2024-lessons} advise, we release the code, the stimuli and the per-request answers of every open model, and also all numbers derived from Jev's answers (\texttt{results/summary.md}, \texttt{figures.json}, \texttt{mixed.json}). We do not release Jev's raw answers: TypeSafe's terms forbid using its output ``to perform model distillation, train a model to imitate the output of the Services, or develop \ldots{} a similar or competing product or service'' \citep[Section 2.3(b)]{typesafe-2026-mca}. We used Jev's answers for this evaluation only. Anyone with a TypeSafe API key can rerun the requests with \texttt{run.py}; since Jev's answers vary between calls, a rerun reproduces them only up to that variation, which our second pass measures (the top answer of the decision task changes in 135 of 9,450 identical requests).
+
+\paragraph{Compute.} Summed over the published result files, the local runs took about 8 hours of request time, or about 10 GPU-hours counting the runs on both GPUs twice; with model loading and conversion, at most 12 GPU-hours on two NVIDIA RTX 3090 GPUs. All requests to TypeSafe's API cost about US\$1, at \$0.042 per million input tokens.
+
+\paragraph{Use of AI assistants.} The author used AI assistants (Anthropic's Claude, through Claude Code) to write and debug the evaluation code, run and monitor the experiments, search for and check literature, and draft and revise the text. The author designed the study, checked the results against the released outputs, and takes responsibility for the content.
 
 \bibliography{references}
 
 \appendix
 
-\section{Which bias falls on whom}
-\label{app:whom}
+\section{Serving details}
+\label{app:serving}
 
-Table~\ref{tab:whom} lists, per bias, the group it falls on and the models that show it.
+\texttt{results/servers-z390.json} lists, for every local run, the weights (GGUF file, SHA-256 and source repository at a pinned revision, or Hugging Face revision and decision-head hashes), the GPUs and the full server arguments.
 
-\begin{table*}[t]
-\centering\small
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{4.4cm}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{2.4cm}L@{}}
-\toprule
-Bias & Falls on & Model & Numbers \\
-\midrule
-Violence judged more acceptable when it serves a greater good & Men & All eight & mean rating gap positive in all 160 model $\times$ act $\times$ stake combinations; small without a stake, except insults \\
-Uncued child's writing labelled a girl's, when forced to choose & Boys & JEV-9B, clef-flash, granite-switch & 94\%, 90\% and 81\% \\
-Control phrases about a boy labelled a girl's & Boys & d1 & 59\% \\
-Missing information filled with a stereotype (BBQ) & Women more than men & clef-flash & names a person in 33\% of the questions about women and 16\% about men; 75\% and 57\% of those stereotyped \\
-Missing information filled with a stereotype (BBQ) & Women more often; men slightly more one-sided & granite-switch & names a person in 75\% and 42\%; 76\% and 82\% stereotyped \\
-Missing information filled with a stereotype (BBQ) & Men slightly more than women & d1 & names a person in 15\% and 22\%; 70\% and 75\% stereotyped \\
-Missing information filled with a stereotype (BBQ) & Trans people most & pplx, clef-flash & names a person in 22\% and 42\% of the questions about trans people; 96\% and 77\% of those stereotyped \\
-Stereotyped sentence preferred (StereoSet) & Women and men alike & All eight & female and male targets within 5.6 points ($p > 0.17$) \\
-\bottomrule
-\end{tabularx}
-\caption{Which bias falls on whom. Differences between groups are descriptive, not tested. Jev and JEV-27B name a person in too few BBQ questions, and JEV-9B in 4\% to 8\% per group, to compare groups.}
-\label{tab:whom}
-\end{table*}
+\paragraph{API-compatible models.} One \texttt{llama-server} per model (llama.cpp build 11870, commit 74bca3950, in Docker) with a context of 8,192 tokens and batches of 2,048 tokens; the 27B models on both GPUs, the others on one. pplx-decider's Q8\_0 file was converted from \texttt{perplexity-ai/pplx-decider-v1.1-27b} at revision 14c9d901 with llama.cpp b11870 (\texttt{--convert --outtype q8\_0}); its header carries the decision type (\texttt{pplx-decider}), the calibration temperature and the request template, as the published 4-bit conversion does.
 
-\section{Reliability checks}
-\label{app:reliability}
+\paragraph{A KV-cache trap in llama-server.} For a decision model that also generates text, \texttt{llama-server} reuses the cached attention state of the previous prompt and computes only the rest; decision requests ignore \texttt{--no-cache-prompt}. A different split into batches changes the order of floating-point sums, so granite-switch's answer depended on the request before: a repeat moved by up to 0.017, four requests at once by 0.114. Emptying the slot before every request made it repeat exactly; all granite-switch decision results use that.
 
-\begin{table*}[t]
+\paragraph{Distilled models.} vLLM 0.32.0 with each model's LoRA adapter (rank 32), at most 16 sequences at a time. JEV-27B's bf16 weights (54\,GB) do not fit in two 24\,GB GPUs, so vLLM quantized them to fp8 on load (weight-only) and split the model over both GPUs. We read the decision head as the reference client on the model cards does, which reproduces the cards' two worked examples to within 0.01.
+
+\paragraph{Analysis.} \texttt{analyze.py} uses only Python 3.12's standard library; \texttt{mixed.py} uses statsmodels 0.15.0 and pandas 3.0.0.
+
+\paragraph{Jev.} TypeSafe's \texttt{/v1/systemone} endpoint, eight requests at a time; \texttt{run.py} requires every response to name the versioned model asked for. Provenance is in \texttt{results/api-typesafe.json}.
+
+\section{Further results}
+\label{app:further}
+
+\paragraph{Moral trade-offs.} Over the seven items GPT-4 was asked (harassing, abusing and torturing a woman or a man, and sacrificing one person), the models' mean ratings span 1.2 (Kev) to 3.3 points (Jev), GPT-4's 3.7. Relative to that span the harassment gap is 0.73 to 0.87 in pplx, clef-flash, granite-switch and Kev, 0.51 in Jev and 0.31 in d1 (GPT-4 0.63); the abuse gap is at most 0.55 (pplx; GPT-4 0.86). GPT-4's 4.65-point vignette contrast is 0.28 to 0.88 here, and 0.00 in d1; Qwen3.8-27B gives 0.42 through option letters and 0.40 with generated answers, so the shrinkage is not an artefact of reading probabilities. Asked openly which of two harassments is worse, clef-flash and granite-switch put 0.95 and 0.66 of their probability on ``to harass a woman is worse''; the others mostly answer ``equal'' (Jev 0.93, Kev 0.88, pplx 0.71, d1 0.63), and GPT-4's open ranking showed no gender difference. Read from the top answers, the harassment gap under the apocalypse is 5.35 points for pplx and 4.5 for Jev.
+
+\paragraph{Children's writing.} With the abstention option, the models also abstain on cued phrases: for feminine-coded phrases Kev, d1 and Jev answer \ct{} in 75\%, 69\% and 65\% of cases, pplx in 20\% and granite-switch in 4\%. d1 misreads explicit statements: it labels 44\% of the answers to the three control phrases about a boy a girl's.
+
+\paragraph{BBQ and StereoSet.} With the evidence in the context, all six models name the right person in 90\% to 100\% of the gender questions; two subgroup gaps between answers that fit the stereotype and answers against it exclude zero: d1 on stereotypes about men ($+0.14$, interval 0.06 to 0.24) and Kev on stereotypes about trans people ($+0.14$, 0.02 to 0.29). In StereoSet, female and male targets differ by at most 5.6 points in any model ($p > 0.17$).
+
+\paragraph{Distillation.} Where Jev 1.13 never commits to a person in ambiguous BBQ gender questions, JEV-9B commits in 6\%, mostly to the stereotyped person (0.79). Both students rate violence against a man as more acceptable in all 40 of their act--stake combinations. Whether their gap is smaller than the teacher's depends on the scale: in the mean rating, which the students answer as a seven-option choice, their harassment effect is smaller than Jev 1.14's (mixed model: $+1.05$ and $+0.96$ against $+1.65$); in logit P(yes), a format they share with Jev, JEV-27B's is as large ($+1.68$ against $+1.56$) and JEV-9B's smaller ($+0.95$). Jev itself moves: over all 19,405 requests its two passes are 0.001 apart in mean KL and versions 1.13 and 1.14 0.011; with 1.14 its share of ``non-binary'' for uncued writing fell from 66\% to 47\%, and an application calling the alias \texttt{jev-latest} received 1.14 without a change of code \citep{typesafe-2026-models}.
+
+\paragraph{Distance to Jev.} Table~\ref{tab:distance} gives each model's distance to Jev 1.13 on the three choice tests that every model answers in the same format.
+
+\begin{table}[t]
 \centering\small
 \setlength{\tabcolsep}{4pt}
-\begin{tabularx}{\textwidth}{@{}Lrrrrrrrr@{}}
+\begin{tabular}{@{}lrrr@{}}
 \toprule
-Check & Jev & JEV-27B & JEV-9B & pplx & clef-flash & granite-switch & Kev & d1 \\
+Model & Study 1 & BBQ & StereoSet \\
 \midrule
-Median time per answer & 186 ms$^a$ & 192 ms$^b$ & 91 ms & 129 ms & 95 ms & 57 ms & 63 ms & 22 ms \\
-The same request repeated: largest probability difference & 0.11 & 0.008 & 0.015 & 0 & 0 & 0 & 0 & 0 \\
-Four requests at once: largest probability difference & 0.16 & 0.008 & 0.012 & 0.058 & 0 & n/a$^c$ & 0 & 0.033 \\
-Study 1: option order changes the top answer & 11.1\% & 4.5\% & 4.9\% & 14.6\% & 0\% & 7.3\% & 28.5\% & 18.4\% \\
-StereoSet: option order changes the top answer & 8.7\% & 11.1\% & 11.5\% & 26.8\% & 0\% & 12.1\% & 26.0\% & 13.3\% \\
-Ten wordings of one Study 2 question: SD of the mean rating & 0.24 & 0.14 & 0.23 & 0.25 & 0.31 & 0.35 & 0.18 & 0.39 \\
-Scale listed 7 to 1 instead of 1 to 7: mean rating moves by & 0.11 & 0.14 & 0.23 & 0.12 & 0.15 & 0.47 & 0.14 & 1.60 \\
-Rating and yes/no rank the 18 Study 2 items alike (Spearman) & 0.95 & 0.99 & 0.98 & 0.98 & 0.93 & 0.96 & 0.98 & 0.84 \\
-Explicit control phrases labelled right & 83\% & 100\% & 99\% & 87\% & 100\% & 97\% & 80\% & 55\% \\
+Jev 1.14, second pass$^a$ & 0.003 & 0.001 & 0.002 \\
+Jev 1.14 & 0.029 & 0.005 & 0.018 \\
+JEV-27B (card 0.025) & 0.120 & 0.068 & 0.119 \\
+JEV-9B (card 0.028) & 0.250 & 0.172 & 0.168 \\
+pplx 27B & 0.185 & 0.132 & 0.204 \\
+clef-flash 9B & 0.230 & 0.387 & 0.284 \\
+granite-switch 8B & 0.243 & 0.747 & 0.184 \\
+Kev 4B & 0.420 & 0.385 & 0.263 \\
+d1 3B & 0.298 & 0.335 & 0.402 \\
+\midrule
+\multicolumn{4}{@{}l}{\textit{Backbones, read through option letters}} \\
+Qwen3.8-27B & 0.340 & 0.097 & 0.265 \\
+Qwen3.5-9B & 0.370 & 0.289 & 0.249 \\
 \bottomrule
-\end{tabularx}
-\caption{Reliability checks of the eight decision models, each on one RTX 3090 unless noted. $^a$TypeSafe's API, including the network from the Netherlands. $^b$Two RTX 3090s, fp8 weights. $^c$Not comparable: granite-switch's slot is emptied before every request (Appendix~\ref{app:stability}), and the erase calls of parallel requests interleave.}
-\label{tab:reliability}
+\end{tabular}
+\caption{Distance to Jev 1.13 on choice questions: mean KL(Jev 1.13 $\|$ model) per request, the direction the JEV cards use (0 = the same answers; probabilities floored at 0.005, since Jev reports steps of 0.01). Card: AutoTrust's value for choice questions on its own test set. $^a$Against Jev 1.14's first pass: the noise floor.}
+\label{tab:distance}
+\end{table}
+
+\section{Quantization check}
+\label{app:quant}
+
+Our first runs of the five open decision models and the base models used 4-bit files (Q4\_K\_S or Q4\_K\_M). Table~\ref{tab:quant} compares them with the main runs over the 9,955 requests of the nine studies other than the decision task.
+
+\begin{table*}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lrrrrrrrr@{}}
+\toprule
+& & \multicolumn{3}{c}{Study 2 gap, apocalypse} & Uncued & \multicolumn{2}{c}{BBQ, no evidence} & StereoSet \\
+\cmidrule(lr){3-5}\cmidrule(lr){7-8}
+Model, 4-bit file & KL & harass & abuse & torture & ``girl'' & commits & stereotyped & ss \\
+\midrule
+pplx, Q4\_K\_S & 0.006 & $+2.76$/$+2.62$ & $+1.78$/$+1.41$ & $+1.15$/$+1.21$ & 47/46 & 8/6 & 0.81/0.92 & 76.5/76.5 \\
+clef-flash, Q4\_K\_S & 0.016 & $+1.30$/$+1.27$ & $+0.44$/$+0.36$ & $+0.85$/$+0.90$ & 85/90 & 33/31 & 0.76/0.73 & 76.5/75.9 \\
+granite, Q4\_K\_M & 0.017 & $+1.51$/$+1.37$ & $+0.59$/$+0.46$ & $+1.42$/$+1.25$ & 82/81 & 61/67 & 0.76/0.75 & 77.1/76.7 \\
+Kev, Q4\_K\_M & 0.005 & $+0.93$/$+0.90$ & $+0.44$/$+0.41$ & $+0.74$/$+0.72$ & 57/44 & 13/15 & 0.59/0.54 & 74.4/75.5 \\
+d1, Q4\_K\_M & 0.008 & $+0.85$/$+0.75$ & $+0.43$/$+0.50$ & $+0.40$/$+0.37$ & 56/60 & 22/20 & 0.72/0.72 & 64.0/64.2 \\
+\midrule
+granite text, Q4\_K\_M & 0.142 & $+0.69$/$+0.72$ & $+0.26$/$+0.21$ & $+0.46$/$+0.60$ & 49/54 & 9/12 & 0.42/0.50 & 70.6/70.2 \\
+Qwen3.8-27B, Q4\_K\_M & 0.010 & $+1.38$/$+1.78$ & $+0.48$/$+0.59$ & $+1.50$/$+1.53$ & 42/47 & 2/3 & 0.85/0.88 & 73.0/73.8 \\
+Qwen3.8-27B, gen. & 0.115 & $+1.80$/$+1.87$ & $+1.02$/$+0.99$ & $+0.59$/$+0.69$ & 44/44 & -- & -- & -- \\
+Qwen3.5-9B, Q4\_K\_S & 0.021 & $+0.64$/$+1.01$ & $+0.25$/$+0.40$ & $+0.47$/$+0.69$ & 51/51 & 9/17 & 0.77/0.62 & 72.6/74.0 \\
+Qwen3.5-4B, Q4\_K\_M & 0.027 & $+0.46$/$+0.35$ & $+0.46$/$+0.34$ & $+0.34$/$+0.32$ & 74/84 & 48/45 & 0.61/0.61 & 75.3/74.2 \\
+\bottomrule
+\end{tabular}
+\caption{Main run (16-bit; pplx and Qwen3.8-27B 8-bit) against the 4-bit run of the same model: mean KL from the main run's answers to the 4-bit run's, and each measure as main / 4-bit (``girl'' and commits in \%; gen.: five generated answers per request). Stereotyped: stereotype-consistent share of committed answers. Source: \texttt{results/summary.md}, ``Quantization check''.}
+\label{tab:quant}
 \end{table*}
 
-clef-flash's answers do not change with option order at all (differences of exactly 0), which suggests its decision head scores the options independently of their position; we did not verify this. Order flips in the other models sit where a model is undecided: in pplx every Study 1 flip falls on a phrase with P(female) between 0.41 and 0.59 (Table~\ref{tab:reliability}). Jev's StereoSet answers put 0.347, 0.333 and 0.320 of their probability on the option listed first, second and third, the lean toward the first option that TypeSafe reports for Jev 1.13 \citep{typesafe-2026-jaggedness}. Jev's missed controls come from one phrase, a boy who drew ``a boy with blonde curl'', which it calls a girl's in 65\% of the probability. On a Mac (Metal, LM Studio), the same pplx and clef-flash files differ from the CUDA runs by a median of 0.002 per probability, and the largest difference per request has a median of 0.006; the top answer differs in 1.3\% and 1.4\% of 1,620 requests, and gaps and asymmetries move by at most 0.1.
+4-bit quantization moves single answers more than most aggregates. For the decision models the mean KL between precisions is 0.005 to 0.017, far below any open model's distance to Jev 1.13 (Table~\ref{tab:distance}); their apocalypse gaps move by at most 0.37 points (pplx, abuse), their BBQ commitment rates by at most 6 points and StereoSet ss by at most 1.1 points. Shares that rest on few answers move more: pplx's stereotype-consistent share goes from 0.81 to 0.92 (43 and 37 committed answers), Kev's share of uncued phrases called a girl's from 57\% to 44\%. Read through option letters, the base models move more (harassment gaps by up to 0.40 points). granite-switch's text interface moves most (KL 0.142, against 0.017 for its decision interface); rerunning 204 of its text-interface requests without the prompt cache and with an emptied slot gives identical answers (\texttt{results/checks}), so this is an effect of quantization on the text path, not of the cache. The generated answers of Qwen3.8-27B differ by 0.115, which includes the variation of sampling five answers per request. \citet{hua-etal-2026-quantized} found that 4-bit quantization flips individual bias answers in chat models.
 
-\section{Numerical stability}
-\label{app:stability}
-
-\paragraph{A KV-cache trap in llama-server.} For a decision model that also generates text, \texttt{llama-server} reuses the cached attention state of the previous prompt and computes only the rest; decision requests ignore \texttt{--no-cache-prompt}. A different split into batches changes the order of floating-point sums, so granite-switch's answer depended on the request before: a repeat moved by up to 0.017, four requests at once by 0.114. Emptying the slot before every request made it repeat exactly; all granite-switch results use that.
-
-\paragraph{Precision or readout?} The same 122 requests through granite-switch (label logprobs) and Kev (decision head) in three precisions and along several numeric paths: largest probability difference per request, median and maximum, and the number of top answers that change (Table~\ref{tab:stability}).
+\paragraph{Precision or numeric path?} The same 122 requests through granite-switch (label logprobs) and Kev (decision head) in three precisions and along several numeric paths (Table~\ref{tab:stability}). Unquantized, granite-switch moves by at most 0.024 across hardware and batch sizes, so reading label logprobs is not unstable in itself; 4-bit quantization makes the path matter.
 
 \begin{table*}[t]
 \centering\small
@@ -367,36 +379,180 @@ bf16 against Q4\_K\_M, batch of 2048 & 0.0172 & 0.385 & 10 of 122 & 0.0217 & 0.0
 \label{tab:stability}
 \end{table*}
 
-Unquantized, granite-switch moves by at most 0.024 across hardware and batch sizes, so reading label logprobs is not unstable in itself; 4-bit quantization makes the path matter; \citet{hua-etal-2026-quantized} found that it flips individual bias answers in chat models. Over all 9,955 requests, the bf16 reruns of granite-switch and Kev move the gaps by at most 0.29 points (granite-switch's vignette contrast from 0.59 to 0.88) and the BBQ and StereoSet shares by at most 6 points. The largest change is a default: Kev calls 57\% of uncued phrases a girl's in bf16, against 44\% in Q4\_K\_M. Kev's Study 1 reversal weakens from $-0.12$ to $-0.08$.
-
-\section{BBQ beyond gender}
-\label{app:bbqx}
-
-Table~\ref{tab:bbqx} gives the share of a model's picks that name the stereotyped person, and in brackets how often it names a person at all, in ambiguous questions; 0.50 is no preference. Below 10 picks the table gives no share.
+\section{Decision models against their controls}
+\label{app:controls}
 
 \begin{table*}[t]
 \centering\footnotesize
 \setlength{\tabcolsep}{3pt}
-\begin{tabular}{@{}lrrrrrrrr@{}}
+\begin{tabularx}{\textwidth}{@{}Lrrrrrrrrr@{}}
 \toprule
-Category & Jev & JEV-27B & JEV-9B & pplx & clef-flash & granite & Kev & d1 \\
+& \multicolumn{3}{c}{Qwen3.8-27B} & \multicolumn{2}{c}{Qwen3.5-9B} & \multicolumn{2}{c}{Qwen3.5-4B} & \multicolumn{2}{c@{}}{granite-switch 8B} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}\cmidrule(l){9-10}
+Measure & pplx & \shortstack[r]{base,\\letters} & \shortstack[r]{base,\\gen.} & \shortstack[r]{clef-\\flash} & base & Kev & base & \shortstack[r]{deci-\\sion} & text \\
 \midrule
-Age & -- (2\%) & 0.98 (26\%) & 0.88 (52\%) & 0.91 (58\%) & 0.81 (76\%) & 0.77 (96\%) & 0.90 (30\%) & 0.81 (57\%) \\
-Disability status & -- (3\%) & 0.95 (10\%) & 0.85 (27\%) & 0.95 (47\%) & 0.80 (79\%) & 0.84 (98\%) & 0.78 (32\%) & 0.85 (43\%) \\
-Nationality & -- (4\%) & 0.76 (10\%) & 0.72 (18\%) & 0.73 (22\%) & 0.66 (70\%) & 0.69 (82\%) & 0.67 (32\%) & 0.61 (32\%) \\
-Physical appearance & -- (1\%) & 0.92 (7\%) & 0.88 (25\%) & 0.92 (37\%) & 0.91 (71\%) & 0.93 (85\%) & 0.83 (27\%) & 0.88 (43\%) \\
-Race and ethnicity & -- (0\%) & -- (2\%) & 0.57 (7\%) & 0.94 (4\%) & 0.67 (44\%) & 0.61 (68\%) & 0.63 (18\%) & 0.58 (19\%) \\
-Religion & 1.00 (6\%) & 0.85 (10\%) & 0.75 (20\%) & 0.71 (24\%) & 0.75 (48\%) & 0.78 (80\%) & 0.67 (23\%) & 0.75 (28\%) \\
-Socio-economic status & -- (0\%) & 0.94 (8\%) & 0.91 (16\%) & 0.96 (26\%) & 0.90 (48\%) & 0.92 (88\%) & 0.83 (26\%) & 0.98 (30\%) \\
-Sexual orientation & -- (0\%) & -- (3\%) & 0.93 (8\%) & 0.82 (22\%) & 0.78 (48\%) & 0.72 (77\%) & 0.59 (14\%) & 0.65 (20\%) \\
+Study 1 asymmetry $I_m - I_f$ (GPT-4 $+0.27$) & $+0.11$ & $+0.16$ & $+0.15$ & $+0.05$ & $+0.10$ & $-0.08$ & $+0.13$ & $+0.17$ & $+0.14$ \\
+Uncued phrases labelled a girl's & 47\% & 42\% & 44\% & 85\% & 51\% & 57\% & 74\% & 82\% & 49\% \\
+Harassment gap, apocalypse (GPT-4 $+2.34$) & $+2.76$ & $+1.38$ & $+1.80$ & $+1.30$ & $+0.64$ & $+0.93$ & $+0.46$ & $+1.51$ & $+0.69$ \\
+Harassment gap, five stakes & $+1.98$ & $+1.49$ & & $+1.25$ & $+0.90$ & $+1.09$ & $+0.59$ & $+1.26$ & $+1.08$ \\
+Torture gap, apocalypse (GPT-4 $+0.49$) & $+1.15$ & $+1.50$ & $+0.59$ & $+0.85$ & $+0.47$ & $+0.74$ & $+0.34$ & $+1.42$ & $+0.46$ \\
+Vignette contrast (GPT-4 $+4.65$) & $+0.28$ & $+0.42$ & $+0.40$ & $+0.35$ & $+0.27$ & $+0.38$ & $+0.16$ & $+0.88$ & $+0.85$ \\
+BBQ, no evidence: commits to a person & 8\% & 2\% & & 33\% & 9\% & 13\% & 48\% & 61\% & 9\% \\
+\quad stereotype-consistent share & 0.81 & 0.85 & & 0.76 & 0.77 & 0.59 & 0.61 & 0.76 & 0.42 \\
+StereoSet ss & 76.5 & 73.0 & & 76.5 & 72.6 & 74.4 & 75.3 & 77.1 & 70.6 \\
 \midrule
-Gender identity & -- (0\%) & -- (0.4\%) & 0.79 (6\%) & 0.92 (6\%) & 0.73 (31\%) & 0.75 (67\%) & 0.54 (15\%) & 0.72 (20\%) \\
+Check: option order changes the Study 1 top answer & 15\% & 22\% & 24\% & 0\% & 63\% & 30\% & 34\% & 7\% & 35\% \\
+Check: control phrases about a boy labelled a girl's & 13\% & 0\% & 9\% & 0\% & 22\% & 11\% & 37\% & 9\% & 24\% \\
+\bottomrule
+\end{tabularx}
+\caption{Decision models against their controls, grouped by backbone. Bases: Qwen3.8-27B (read through option letters, and as five generated answers per request), Qwen3.5-9B and Qwen3.5-4B-Base (option letters); granite-switch through its decision interface and its own text interface (option letters). Empty cells: Study 2e, BBQ and StereoSet were not run with generated answers.}
+\label{tab:controls}
+\end{table*}
+
+Read through option letters, the base models change many top answers when only the option order changes (22\% to 63\% of Study 1 cases) and fail explicit controls, so differences from a decision model are indicative, not causal (Table~\ref{tab:controls}). Within that limit, the moral-trade-off gap is already present in the base models; over five stakes the decision models' harassment gaps are larger than their bases' (pplx $+1.98$ against $+1.49$, clef-flash $+1.25$ against $+0.90$, Kev $+1.09$ against $+0.59$), with overlapping intervals. The preference for ``girl'' differs more: clef-flash 85\% against 51\% for its base, Kev 57\% against 74\%, pplx 47\% against 42\%. granite-switch's two interfaces differ most: its decision interface commits in 61\% of the ambiguous BBQ gender questions, its text interface in 9\%, and its harassment gap falls from $+1.51$ to $+0.69$; its card describes a separate decision adapter that control tokens in the chat template activate \citep{ibm-2026-granite-switch}, so the two interfaces need not run the same computation. For Qwen3.8-27B, option letters and generated text agree on most aggregates (asymmetry $+0.16$ and $+0.15$, vignette 0.42 and 0.40, uncued ``girl'' 42\% and 44\%), not on the torture gap ($+1.50$ against $+0.59$). In a partial 4-bit run with generated answers (\texttt{results/checks}), granite-switch hedged on moral items and gave no usable answer to one sacrifice question in five samples.
+
+\section{Which bias falls on whom}
+\label{app:whom}
+
+Table~\ref{tab:whom} lists, per bias, the group it falls on and the models that show it.
+
+\begin{table*}[t]
+\centering\small
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{4.4cm}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{2.4cm}L@{}}
+\toprule
+Bias & Falls on & Model & Numbers \\
+\midrule
+Violence rated more acceptable when it serves a greater good & Men & All six & mean rating gap positive in all 120 model $\times$ act $\times$ stake combinations; small without a stake, except insults \\
+Lower probability of the favourable decision & Men & Jev, pplx, clef-flash, granite-switch, Kev & $+0.050$ to $+0.097$ in log-odds for women, $+0.046$ to $+0.210$ for non-binary people (Holm-adjusted $p \le 0.006$) \\
+Uncued child's writing labelled a girl's, when forced to choose & Boys & clef-flash, granite-switch & 85\% and 82\% \\
+Control phrases about a boy labelled a girl's & Boys & d1 & 44\% \\
+Missing information filled with a stereotype (BBQ) & Women more than men; trans people most & clef-flash & commits in 36\% of the questions about women, 19\% about men and 44\% about trans people; 0.76, 0.64 and 0.84 of those stereotype-consistent \\
+Missing information filled with a stereotype (BBQ) & Women more often than men & granite-switch & commits in 71\% and 35\%; 0.77 and 0.78 stereotype-consistent; trans people 65\% and 0.70 \\
+Missing information filled with a stereotype (BBQ) & Trans people most often & d1 & commits in 18\% (women), 19\% (men) and 36\% (trans people); 0.75, 0.64 and 0.72 stereotype-consistent \\
+Missing information filled with a stereotype (BBQ) & Trans people most often & pplx & commits in 26\% of the questions about trans people, 0.86 of those stereotype-consistent; 2\% about women, 6\% about men \\
+Stereotyped sentence preferred (StereoSet) & Women and men alike & All six & female and male targets within 5.6 points ($p > 0.17$) \\
+\bottomrule
+\end{tabularx}
+\caption{Which bias falls on whom. Differences between groups are descriptive, not tested. Jev commits to a person in no BBQ gender question, and Kev in too few questions about men and trans people (6 and 7), to compare groups.}
+\label{tab:whom}
+\end{table*}
+
+\section{Reliability checks}
+\label{app:reliability}
+
+\begin{table*}[t]
+\centering\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\textwidth}{@{}Lrrrrrrrr@{}}
+\toprule
+Check & Jev & pplx & clef-flash & granite-switch & Kev & d1 & JEV-27B & JEV-9B \\
+\midrule
+Median time per answer & 186 ms$^a$ & 138 ms$^b$ & 68 ms & 62 ms & 31 ms & 16 ms & 192 ms$^b$ & 91 ms \\
+The same request repeated: largest probability difference & 0.11 & 0 & 0 & 0 & 0 & 0 & 0.008 & 0.015 \\
+Four requests at once: largest probability difference & 0.16 & 0.028 & 0 & n/a$^c$ & 0 & 0.011 & 0.008 & 0.012 \\
+Study 1: option order changes the top answer & 11.1\% & 14.9\% & 0\% & 7.3\% & 29.9\% & 22.9\% & 4.5\% & 4.9\% \\
+StereoSet: option order changes the top answer & 8.7\% & 26.2\% & 0\% & 12.9\% & 24.7\% & 13.9\% & 11.1\% & 11.5\% \\
+Ten wordings of one Study 2 question: SD of the mean rating & 0.24 & 0.25 & 0.34 & 0.43 & 0.18 & 0.38 & 0.14 & 0.23 \\
+Scale listed 7 to 1 instead of 1 to 7: mean rating moves by & 0.11 & 0.11 & 0.11 & 0.49 & 0.12 & 1.70 & 0.14 & 0.23 \\
+Rating and yes/no rank the 18 Study 2 items alike (Spearman) & 0.95 & 0.99 & 0.93 & 0.97 & 0.99 & 0.83 & 0.99 & 0.98 \\
+Explicit control phrases labelled right & 83\% & 85\% & 100\% & 95\% & 81\% & 58\% & 100\% & 99\% \\
+\bottomrule
+\end{tabularx}
+\caption{Reliability checks of the main runs, each local model on one RTX 3090 unless noted. All llama.cpp runs sent one request at a time; the JEV runs in vLLM sent eight at once. $^a$TypeSafe's API, including the network from the Netherlands. $^b$Two RTX 3090s. $^c$Not comparable: granite-switch's slot is emptied before every request (Appendix~\ref{app:serving}), and the erase calls of parallel requests interleave.}
+\label{tab:reliability}
+\end{table*}
+
+clef-flash's answers do not change with option order at all (differences of exactly 0), which suggests its decision head scores the options independently of their position; we did not verify this. Order changes in the other models fall where a model is undecided: in pplx, every Study 1 change falls on a phrase and wording whose mean P(female) lies between 0.42 and 0.56. Jev's StereoSet answers put 0.347, 0.333 and 0.320 of their probability on the option listed first, second and third, the lean toward the first option that TypeSafe reports for Jev 1.13 \citep{typesafe-2026-jaggedness}. Jev's missed controls come from one phrase, a boy who drew ``a boy with blonde curl'', which it calls a girl's in 65\% of the probability.
+
+\paragraph{Serving path.} To check that llama.cpp reads the models as their makers intend, we sent 151 requests spread over all ten studies (every 128th) to Kev through its maker's own server (\texttt{github.com/jaredpalmer/kev} at commit 2074cc4, \texttt{kev.serve}, PyTorch in bf16, weights \texttt{jaredpalmer/kev-4b} at revision 6cfce5c2, from which the GGUF file was converted). All 151 top answers agree with our llama.cpp answers; probabilities differ by at most 0.0125 and on average by 0.0025, and the mean KL divergence is below 0.0001 (\texttt{results/checks/kev-reference.txt}).
+
+\section{BBQ beyond gender}
+\label{app:bbqx}
+
+Table~\ref{tab:bbqx} gives the stereotype-consistent share of a model's committed answers in ambiguous questions and, in brackets, how often it commits; 0.50 is no preference. Below 10 committed answers the table gives no share.
+
+\begin{table*}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+Category & Jev & pplx & clef-flash & granite-switch & Kev & d1 \\
+\midrule
+Age & -- (2\%) & 0.94 (58\%) & 0.81 (81\%) & 0.77 (96\%) & 0.88 (33\%) & 0.83 (57\%) \\
+Disability status & -- (3\%) & 0.96 (47\%) & 0.82 (82\%) & 0.86 (96\%) & 0.78 (31\%) & 0.86 (39\%) \\
+Nationality & -- (4\%) & 0.73 (22\%) & 0.66 (69\%) & 0.71 (76\%) & 0.67 (30\%) & 0.55 (32\%) \\
+Physical appearance & -- (1\%) & 0.91 (35\%) & 0.87 (77\%) & 0.89 (86\%) & 0.82 (26\%) & 0.90 (44\%) \\
+Race and ethnicity & -- (0\%) & 0.91 (6\%) & 0.68 (50\%) & 0.65 (62\%) & 0.70 (15\%) & 0.61 (18\%) \\
+Religion & 1.00 (6\%) & 0.76 (24\%) & 0.76 (50\%) & 0.75 (78\%) & 0.66 (22\%) & 0.75 (28\%) \\
+Socio-economic status & -- (0\%) & 0.96 (24\%) & 0.91 (52\%) & 0.91 (88\%) & 0.90 (26\%) & 0.98 (32\%) \\
+Sexual orientation & -- (0\%) & 0.89 (22\%) & 0.82 (52\%) & 0.73 (71\%) & 0.65 (16\%) & 0.62 (20\%) \\
+\midrule
+Gender identity & -- (0\%) & 0.81 (8\%) & 0.76 (33\%) & 0.76 (61\%) & 0.59 (13\%) & 0.72 (22\%) \\
 \bottomrule
 \end{tabular}
-\caption{BBQ, ambiguous questions: stereotyped share of picks (share of questions in which the model names a person); --: fewer than 10 picks.}
+\caption{BBQ, ambiguous questions: stereotype-consistent share of committed answers (share of questions in which the model commits to a person); --: fewer than 10 committed answers.}
 \label{tab:bbqx}
 \end{table*}
 
-On gender most models name a person less often than in most other categories, which may reflect caution about gender or differences between the categories' templates; the direction of their picks leans toward the stereotype in every category with enough picks. The intervals (\texttt{results/summary.md}) include 0.50 for d1 in nationality, race and sexual orientation, for Kev in sexual orientation, for JEV-9B in race and for JEV-27B in religion.
+On gender most models commit less often than in most other categories, which may reflect caution about gender or differences between the categories' templates; the direction of their committed answers leans toward the stereotype in every category with enough of them. The intervals (\texttt{results/summary.md}) include 0.50 for Kev in religion and sexual orientation and for d1 in nationality and sexual orientation.
+
+\section{Mixed-effects models}
+\label{app:mixed}
+
+\paragraph{Specification.} Study 2 (the apocalypse of Study 2a/2b and the four stakes of Study 2e): the paired difference, acceptability against the man minus against the woman in the same act, stake and wording (and scale direction), is regressed on the act, with crossed random intercepts for wording and stake; on the paired difference these intercepts are the random victim slopes of a model of the raw answers, whose nuisance intercepts the pairing removes. It is fitted once for the mean rating on the 1--7 scale and once for logit P(yes). Decision task: logit P(yes) on gender, race and age in decades, with a random intercept and random gender slopes per decision; the reference person is a 60-year-old white man, as in \citet{tamkin-etal-2023-discrimination}, who also give each decision random slopes for race and age, z-score age, and report per-template differences with the standard error of the mean, where we bootstrap and sign-flip decision means. All models are fitted by REML with Powell's method in statsmodels 0.15.0 (\texttt{mixed.py}); intervals are 95\% Wald intervals. Several fits put a variance component at zero, which \texttt{results/mixed.md} notes per fit.
+
+Table~\ref{tab:mixed} gives the victim effect for harassment and the gender effects of the decision task; \texttt{results/mixed.md} has all of them.
+
+\begin{table*}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+& \multicolumn{2}{c}{Study 2, harassment} & \multicolumn{2}{c@{}}{Decision task} \\
+\cmidrule(lr){2-3}\cmidrule(l){4-5}
+Run & rating & logit P(yes) & female & non-binary \\
+\midrule
+Jev 1.14 & $+1.65$ [1.47, 1.83] & $+1.56$ [1.43, 1.68] & $+0.050$ [0.036, 0.064] & $+0.046$ [0.017, 0.075] \\
+pplx 27B & $+1.99$ [1.66, 2.31] & $+3.14$ [2.71, 3.56] & $+0.080$ [0.041, 0.120] & $+0.210$ [0.143, 0.278] \\
+clef-flash & $+1.25$ [0.75, 1.75] & $+1.83$ [1.14, 2.52] & $+0.097$ [0.055, 0.139] & $+0.145$ [0.060, 0.231] \\
+granite-switch & $+1.26$ [0.59, 1.93] & $+2.52$ [1.88, 3.16] & $+0.082$ [0.054, 0.109] & $+0.126$ [0.077, 0.175] \\
+Kev & $+1.09$ [0.83, 1.35] & $+1.44$ [1.29, 1.59] & $+0.058$ [0.038, 0.078] & $+0.060$ [0.026, 0.093] \\
+d1 & $+0.52$ [0.27, 0.78] & $+1.00$ [0.69, 1.32] & $+0.018$ [$-0.000$, 0.036] & $+0.024$ [$-0.008$, 0.056] \\
+\midrule
+JEV-27B & $+1.05$ [0.50, 1.60] & $+1.68$ [1.53, 1.82] & & \\
+JEV-9B & $+0.96$ [0.55, 1.36] & $+0.95$ [0.84, 1.06] & & \\
+\bottomrule
+\end{tabular}
+\caption{Mixed-effects estimates. Study 2: acceptability against the man minus against the woman (positive = more acceptable against the man), from paired differences with crossed random intercepts for wording and stake. Decision task: effect on logit P(yes) against a 60-year-old white man, with random intercepts and gender slopes per decision. Insult, abuse and torture: \texttt{results/mixed.md}.}
+\label{tab:mixed}
+\end{table*}
+
+\section{Multiple comparisons}
+\label{app:holm}
+
+Table~\ref{tab:holm} gives the raw and Holm-adjusted p-values of the two declared families.
+
+\begin{table*}[t]
+\centering\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lllll@{}}
+\toprule
+& \multicolumn{2}{c}{Study 1 (16 tests)} & \multicolumn{2}{c@{}}{Decision task (12 tests)} \\
+\cmidrule(lr){2-3}\cmidrule(l){4-5}
+Run & asymmetry & pull & female & non-binary \\
+\midrule
+Jev 1.14 & .005 / .075 & .028 / .360 & ${<}.001$ / ${<}.001$ & .002 / .006 \\
+pplx 27B & .050 / .447 & .038 / .416 & ${<}.001$ / ${<}.001$ & ${<}.001$ / ${<}.001$ \\
+clef-flash & .473 / 1 & .691 / 1 & ${<}.001$ / ${<}.001$ & ${<}.001$ / .002 \\
+granite-switch & .045 / .447 & .532 / 1 & ${<}.001$ / ${<}.001$ & ${<}.001$ / ${<}.001$ \\
+Kev & .157 / .783 & .048 / .447 & ${<}.001$ / ${<}.001$ & ${<}.001$ / .004 \\
+d1 & .005 / .074 & .068 / .447 & .057 / .113 & .149 / .149 \\
+JEV-27B & .045 / .447 & .030 / .365 & -- & -- \\
+JEV-9B & .001 / .019 & .671 / 1 & -- & -- \\
+\bottomrule
+\end{tabular}
+\caption{Raw / Holm-adjusted p-values (two-sided permutation tests). Study 1: the attribution asymmetry $I_m - I_f$ and the stereotype pull, feminine against masculine phrases. Decision task: woman and non-binary person against man. Source: \texttt{results/summary.md}, ``Multiple comparisons''.}
+\label{tab:holm}
+\end{table*}
 
 \end{document}

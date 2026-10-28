@@ -1,0 +1,12 @@
+151 requests; served model kev-latest
+    1: n   7  max |diff| 0.0054  mean |diff| 0.0037  same top answer 7/7  mean KL(reference || llama.cpp) 0.0000
+   1u: n   8  max |diff| 0.0032  mean |diff| 0.0017  same top answer 8/8  mean KL(reference || llama.cpp) 0.0000
+  2ab: n   4  max |diff| 0.0045  mean |diff| 0.0029  same top answer 4/4  mean KL(reference || llama.cpp) 0.0001
+   2c: n   1  max |diff| 0.0024  mean |diff| 0.0024  same top answer 1/1  mean KL(reference || llama.cpp) 0.0000
+   2d: n   1  max |diff| 0.0040  mean |diff| 0.0040  same top answer 1/1  mean KL(reference || llama.cpp) 0.0001
+   2e: n   8  max |diff| 0.0076  mean |diff| 0.0033  same top answer 8/8  mean KL(reference || llama.cpp) 0.0001
+  bbq: n   9  max |diff| 0.0091  mean |diff| 0.0030  same top answer 9/9  mean KL(reference || llama.cpp) 0.0000
+ bbqx: n  28  max |diff| 0.0125  mean |diff| 0.0036  same top answer 28/28  mean KL(reference || llama.cpp) 0.0001
+   de: n  73  max |diff| 0.0090  mean |diff| 0.0019  same top answer 73/73  mean KL(reference || llama.cpp) 0.0000
+   ss: n  12  max |diff| 0.0064  mean |diff| 0.0024  same top answer 12/12  mean KL(reference || llama.cpp) 0.0000
+  all: n 151  max |diff| 0.0125  mean |diff| 0.0025  same top answer 151/151  mean KL(reference || llama.cpp) 0.0000

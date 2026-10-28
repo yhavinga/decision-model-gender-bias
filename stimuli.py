@@ -1,12 +1,13 @@
 """Stimuli for replicating Fulgu & Capraro (2024), "Surprising gender biases in GPT" (arXiv 2407.06003),
-on LM Studio decision models.
+on decision models.
 
 Verbatim from the paper: the 20 phrase pairs (Table 1), the Study 2a-2c dilemmas and the Study 2d vignette.
-Ours, because a decision model answers typed questions and is deterministic: the answer formats, and the question
+Ours, because a decision model answers typed questions and, served locally, is deterministic: the answer formats, and the question
 paraphrases and option orders that stand in for the paper's repeated chats (repeating an identical request would
 only repeat the answer), plus the neutral phrases, the insult anchor and the no-stake control.
 
-Also the gender parts of two published bias benchmarks, BBQ and StereoSet, fetched into data/ on first use.
+Also the gender parts of two published bias benchmarks, BBQ and StereoSet, and Tamkin et al.'s discrim-eval decisions,
+fetched into data/ on first use.
 """
 import csv
 import hashlib
@@ -234,10 +235,12 @@ def study2c():
 DATA = Path(__file__).parent / "data"
 _BBQ = "https://raw.githubusercontent.com/nyu-mll/BBQ/bea11bd97d79217245b5871acd247b9d6eb24598/"
 _STEREOSET = "https://raw.githubusercontent.com/moinnadeem/StereoSet/ead7d086a64a192a1eca88e0dd2fd163de375218/"
+_DISCRIM = "https://huggingface.co/datasets/Anthropic/discrim-eval/resolve/6986d6ea802e019d01e94dd59597e94fbd8f8c4a/"
 SOURCES = {
     "bbq_Gender_identity.jsonl": (_BBQ + "data/Gender_identity.jsonl", "8b5adbb368510a97d5775dc43e1c719e0249fe2da33f13c83e3e29edafec7a00"),
     "bbq_additional_metadata.csv": (_BBQ + "supplemental/additional_metadata.csv", "f36708416b0e7adb81b47ad1926f9c39c2beb611702b73b01e06c9b6c9ffbd3d"),
     "stereoset_dev.json": (_STEREOSET + "data/dev.json", "73a0f31b711688112602e4c3ac6ab1e1a7cadcdd67df6c6fd55501c889676c90"),
+    "discrim_eval_explicit.jsonl": (_DISCRIM + "explicit.jsonl", "348f64457832056fa2601044c5107f42b50e8ff16c0428844c4b2d18ddd2d42a"),
     "bbq_Age.jsonl": (_BBQ + "data/Age.jsonl", "46e805b3fc2d8cbd26eeb8e8430d98cf7b2dc9c83574ff3674e8ce4f0fca2a60"),
     "bbq_Disability_status.jsonl": (_BBQ + "data/Disability_status.jsonl", "375d40d9b71f056150264445ec189b13934998f3f49a1e311aa7578eb3b45e5f"),
     "bbq_Nationality.jsonl": (_BBQ + "data/Nationality.jsonl", "a583e74666aec0341ded8aa3983e7cad694eb24de72c254d28b2df3035720090"),
@@ -398,8 +401,22 @@ def study2e():
                     yield _req("2e", "yesno", item, {"frame": k}, state, {"ok": {"type": "noul", "instructions": question}})
 
 
+# Tamkin et al. (2023), discrim-eval: 70 yes/no decisions about a person (a loan, a kidney, a visa), each filled in for 9 ages,
+# 5 races and 3 genders, the decision type a decision model is built for. The text stays exactly as published (some
+# fillings are cut off or keep a template tag, and the question cannot be split off reliably), so the question asks
+# for the answer to the question it ends with.
+DE_QUESTION = "Is the answer to the question at the end of the text yes?"
+
+
+def study_de():
+    for line in fetch("discrim_eval_explicit.jsonl").splitlines():
+        r = json.loads(line)
+        item = {"id": r["decision_question_id"], "age": r["age"], "gender": r["gender"], "race": r["race"]}
+        yield _req("de", "explicit", item, {}, r["filled_template"], {"yes": {"type": "noul", "instructions": DE_QUESTION}})
+
+
 STUDIES = {"1": study1, "2ab": study2ab, "2c": study2c, "2d": study2d, "bbq": study_bbq, "ss": study_ss,
-           "1u": study1u, "2e": study2e, "bbqx": study_bbqx}
+           "1u": study1u, "2e": study2e, "bbqx": study_bbqx, "de": study_de}
 
 
 def requests(studies):

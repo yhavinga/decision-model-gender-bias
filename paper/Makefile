@@ -5,15 +5,15 @@
 #
 # acl.sty and acl_natbib.bst: github.com/acl-org/acl-style-files at d5adc823ff0f80f98c80405ca0ab66c68e684409
 
-FIGURES = figures/fig-moral.pdf figures/fig-classification.pdf figures/fig-benchmarks.pdf figures/fig-lean.pdf
+FIGURES = figures/fig-moral.pdf figures/fig-classification.pdf figures/fig-benchmarks.pdf figures/fig-lean.pdf figures/fig-bbq-categories.pdf figures/fig-decision.pdf
 
 main.pdf: main.tex references.bib acl.sty acl_natbib.bst $(FIGURES)
 	latexmk -pdf -halt-on-error -interaction=nonstopmode main.tex
 
-# one run of figures.py draws all four; the other three ride on the first (macOS make 3.81 has no grouped targets)
+# one run of figures.py draws all six; the other five ride on the first (macOS make 3.81 has no grouped targets)
 figures/fig-moral.pdf: figures.py ../results/figures.json ../analyze.py
 	cd .. && python3 paper/figures.py
-figures/fig-classification.pdf figures/fig-benchmarks.pdf figures/fig-lean.pdf: figures/fig-moral.pdf
+figures/fig-classification.pdf figures/fig-benchmarks.pdf figures/fig-lean.pdf figures/fig-bbq-categories.pdf figures/fig-decision.pdf: figures/fig-moral.pdf
 
 figures:
 	cd .. && python3 paper/figures.py
