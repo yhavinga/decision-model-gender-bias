@@ -8,7 +8,9 @@
   "cloudflare_clef-flash-cuda": "bartowski/Cloudflare_clef-flash-GGUF",
   "pplx-decider-27b-artemis-cuda": "turintech/pplx-decider-27B-Artemis-GGUF",
   "granite-switch-4.1-8b": "ibm-granite/granite-switch-4.1-8b-GGUF",
-  "granite-switch-4.1-8b-ub1": "ibm-granite/granite-switch-4.1-8b-GGUF"
+  "granite-switch-4.1-8b-ub1": "ibm-granite/granite-switch-4.1-8b-GGUF",
+  "jev-9b": "autotrust/JEV-9B@7ac669b8fb476ba926491e3d1c39f9330d68dbed",
+  "jev-27b": "autotrust/JEV-27B@14b425269ed24452e0a5ad5a8f3e51d139647a88"
  },
  "models": {
   "kev-4b": {
@@ -198,10 +200,77 @@
     "1"
    ],
    "note": "control run: one token per batch"
+  },
+  "jev-9b": {
+   "server": "vLLM (vllm_image), one GPU",
+   "server_args": [
+    "/models/JEV-9B",
+    "--served-model-name",
+    "autotrust/JEV-9B",
+    "--lora-modules",
+    "jev-9b=/models/JEV-9B/adapter_vllm",
+    "--enable-lora",
+    "--max-lora-rank",
+    "32",
+    "--logprobs-mode",
+    "processed_logprobs",
+    "--max-model-len",
+    "4096",
+    "--max-num-seqs",
+    "16",
+    "--gpu-memory-utilization",
+    "0.92",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8000"
+   ],
+   "head_sha256": {
+    "adapter_vllm/decision_head.json": "1ae78fc161dea47cb8e3d5b4f5de4ac61c48a33f8031b68052bf699be30ec7fc",
+    "calibration.json": "9644305e85fac82944ec4353742af9c0fbc6434a277d3f0e54c2abb185aaf9b8"
+   },
+   "readout": "run.py --readout jev: decision template, one-token read-out over the option tokens, + head bias, / per-kind temperature (decide() on the model card). Card check: supplier choice 0.336 / 0.138 / 0.525 / 0.001 (card 0.33 / 0.14 / 0.53 / 0.001), refund noul P(true) 0.991 (card 0.991)",
+   "note": "bf16 as released; --max-num-seqs 16 because the default 256 exceeds the Mamba cache blocks of one 24 GB GPU"
+  },
+  "jev-27b": {
+   "server": "vLLM (vllm_image), two GPUs, tensor parallel",
+   "server_args": [
+    "/models/JEV-27B",
+    "--served-model-name",
+    "autotrust/JEV-27B",
+    "--lora-modules",
+    "jev-27b=/models/JEV-27B/adapter_vllm",
+    "--quantization",
+    "fp8",
+    "--tensor-parallel-size",
+    "2",
+    "--enable-lora",
+    "--max-lora-rank",
+    "32",
+    "--logprobs-mode",
+    "processed_logprobs",
+    "--max-model-len",
+    "4096",
+    "--max-num-seqs",
+    "16",
+    "--gpu-memory-utilization",
+    "0.92",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8000"
+   ],
+   "head_sha256": {
+    "adapter_vllm/decision_head.json": "79fc56c3a030204a2410e6347272fb27facfe299f2f8c0a714e78fc6f8062776",
+    "calibration.json": "902f4f26fdf1b92224c32b706ee6cea381f6465621c82975bf7e0023c02d9dd2"
+   },
+   "readout": "as jev-9b. Card check: supplier choice 0.245 / 0.137 / 0.617 / 0.001 (card 0.25 / 0.13 / 0.62 / 0.001), refund noul P(true) 0.978 (card 0.978)",
+   "note": "backbone quantized on load to fp8 weights (Marlin, weight-only on the RTX 3090); bf16 (54 GB) does not fit in 2x24 GB"
   }
  },
  "checks": {
   "granite-default-settings/granite-switch-4.1-8b-prompt-cache.jsonl": "granite with -np 4 and default cache settings",
   "granite-default-settings/granite-switch-4.1-8b-no-cache-np4.jsonl": "granite with -np 4 --no-cache-prompt --cache-ram 0"
- }
+ },
+ "vllm_image": "sha256:bd8a5d7a8774800c92d714c0c226b32c1863f929150f36efd610aebcd12a335d vllm/vllm-openai:v0.32.0@sha256:befccf0e7e4089aa23926bb6f887a85c0d46c2a99e6de5c5ffdf5cb7957c5b34"
 }

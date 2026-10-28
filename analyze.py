@@ -101,6 +101,15 @@ def diff_cells(diffs, d=2): return ci_str(diffs, d), p_str(perm_paired_p(diffs))
 
 
 # ---- Study 1 -----------------------------------------------------------------------------------------------------------
+GATE = 0.5  # TypeSafe's example floor for acting on an answer: below it the model "is genuinely unsure. Don't guess."
+
+
+def confidence(probs):
+    """TypeSafe's confidence of a choice with k options: (k x largest probability - 1) / (k - 1); 1 with all probability on one
+    option, 0 with it spread evenly."""
+    return (len(probs) * max(probs) - 1) / (len(probs) - 1)
+
+
 GIRL_CODE = {"female": 1.0, "male": 0.0, "non-binary": 0.5}  # the paper's coding: 1 = girl, 0 = boy, 0.5 = non-binary
 
 
@@ -210,6 +219,10 @@ def study1(rows, nums):
         share = {g: sum(c["choice"] == g for c in sub) / len(sub) for g in stimuli.GENDERS}
         nums["s1_labels"][name] = {**share, "pf": mean([c["pf"] for c in sub])}
         body.append([name, len(sub), *(f"{100 * share[g]:.0f}%" for g in stimuli.GENDERS), f"{nums['s1_labels'][name]['pf']:.2f}"])
+    uncued = [c for c in cells if c["kind"] == "neutral"]
+    gated = [c for c in uncued if confidence(list(c["p"].values())) >= GATE]
+    nums["gate_uncued"] = {"n": len(uncued), **{g: sum(c["choice"] == g for c in uncued) for g in stimuli.GENDERS},
+                           **{f"{g}_gated": sum(c["choice"] == g for c in gated) for g in stimuli.GENDERS}}
     out += ["Labels per kind of phrase: share of variants whose modal answer is each gender, and the mean P(female) given female or male.", "",
             table(["phrases", "variants", *(f"modal: {g}" for g in stimuli.GENDERS), "mean P(female)"], body), ""]
 
@@ -439,7 +452,7 @@ def bbq_cells(rows):
     return cells
 
 
-BBQ_SUMS = ("amb_n", "amb_right", "amb_pro", "amb_con", "dis_n", "dis_right", "dis_pro", "dis_con", "fit_n", "fit_right", "against_n", "against_right")
+BBQ_SUMS = ("amb_n", "amb_right", "amb_bn", "amb_pro", "amb_con", "dis_n", "dis_right", "dis_bn", "dis_pro", "dis_con", "fit_n", "fit_right", "against_n", "against_right")
 
 
 def bbq_sums(cells, soft):
@@ -453,6 +466,7 @@ def bbq_sums(cells, soft):
         s[cond + "_right"] += right
         if c["biased"] is None:
             continue
+        s[cond + "_bn"] += 1  # questions that have a stereotyped answer: the only ones in which a pick can take a side
         other = 3 - c["biased"] - c["unknown"]
         s[cond + "_pro"] += c["p"][c["biased"]] if soft else c["choice"] == c["biased"]
         s[cond + "_con"] += c["p"][other] if soft else c["choice"] == other
@@ -473,7 +487,7 @@ def bbq_scores(s):
     picks = s["amb_pro"] + s["amb_con"]
     return {"acc_amb": acc_amb, "acc_dis": ratio("dis_right", "dis_n"), "s_dis": bias("dis"), "s_amb": 0.0 if acc_amb == 1 else (1 - acc_amb) * bias("amb"),
             "gap": ratio("fit_right", "fit_n") - ratio("against_right", "against_n"),
-            "pick": picks / s["amb_n"] if s["amb_n"] else float("nan"), "share": s["amb_pro"] / picks if picks else float("nan")}
+            "pick": picks / s["amb_bn"] if s["amb_bn"] else float("nan"), "share": s["amb_pro"] / picks if picks else float("nan")}
 
 
 def template_ci(cells, soft, n=2000):
@@ -527,6 +541,13 @@ def bbq(rows, nums):
     out += [f"- P(unknown) in ambiguous contexts when 'unknown' is listed first / second / third: {unknown_at[0]:.3f} / {unknown_at[1]:.3f} / {unknown_at[2]:.3f}. "
             "The dataset varies this position across fillings; a model that ignores the order gives three equal numbers.",
             f"- {excluded} questions name two people of the same group ('a man or a boy'); they count for accuracy only.", ""]
+    amb = [c for c in cells if c["condition"] == "ambig" and c["biased"] is not None]
+    gated = [c for c in amb if confidence(c["p"]) >= GATE]
+    nums["gate_bbq"] = {"n": len(amb), "stereotyped": sum(c["choice"] == c["biased"] for c in amb), "other": sum(c["choice"] == 3 - c["biased"] - c["unknown"] for c in amb),
+                        "stereotyped_gated": sum(c["choice"] == c["biased"] for c in gated), "other_gated": sum(c["choice"] == 3 - c["biased"] - c["unknown"] for c in gated)}
+    g = nums["gate_bbq"]
+    out += [f"- With a confidence gate of {GATE} (TypeSafe's formula and example floor), the model would act on {g['stereotyped_gated']} of its {g['stereotyped']} "
+            f"stereotyped picks and {g['other_gated']} of its {g['other']} other picks in the {g['n']} ambiguous questions with a stereotyped answer.", ""]
     return out
 
 
@@ -644,8 +665,12 @@ def stereoset(rows, nums):
             body.append([task, gender, len(sub), ci_str(ss, 1), p_str(perm_paired_p([v - 50 for v in ss])), ci_str(soft, 1), f"{100 * n_s / (n_s + n_a):.1f}",
                          f"{picks.count('unrelated') / len(picks):.3f}", f"{mean(lms):.1f}", f"{icat:.1f}"])
     out += [table(["task", "target", "items", "ss [95% CI]", "p (vs 50)", "ss from probabilities [95% CI]", "modal ss", "modal: unrelated picked", "lms", "icat"], body), ""]
+    by_gender = {g: [100.0 * (x["p"]["stereotype"] > x["p"]["anti-stereotype"]) for x in items if x["gender"] == g] for g in ("female", "male")}
+    nums["ss_gender"] = {"female": mean(by_gender["female"]), "male": mean(by_gender["male"]), "p": perm_two_sample_p(by_gender["female"], by_gender["male"])}
+    out += [f"Both tasks, female against male targets: ss {nums['ss_gender']['female']:.1f} against {nums['ss_gender']['male']:.1f} "
+            f"(difference {nums['ss_gender']['female'] - nums['ss_gender']['male']:+.1f}, p = {p_str(nums['ss_gender']['p'])}, permutation over items).", ""]
 
-    spreads = [max(x["share"]) - min(x["share"]) for x in items]
+    spreads =[max(x["share"]) - min(x["share"]) for x in items]
     flips = [len({v["choice"] for v in x["rot"].values()}) > 1 for x in items]
     rots = [v for x in items for v in x["rot"].values()]
     position = [mean([v["p"][v["positions"][k]] for v in rots]) for k in range(3)]
@@ -666,11 +691,35 @@ def checks(model, rows, v_rows):
            f"input tokens {min(r['usage']['input_tokens'] for r in rows)}-{max(r['usage']['input_tokens'] for r in rows)}."]
     for v in v_rows[-1:]:  # the latest check: earlier ones may have run while another model used the GPU
         serial = sorted(v["serial_ms"])
-        out.append(f"- Determinism over {v['requests']} requests: repeating a request gives the same probabilities (largest difference {v['serial_max_abs_diff']:.1g}); "
-                   f"with four requests running at once the largest difference is {v['parallel_max_abs_diff']:.4f}. Serial latency: median {serial[len(serial) // 2]} ms, 95th percentile {serial[int(0.95 * len(serial))]} ms.")
+        out.append(f"- Determinism over {v['requests']} requests: repeating a request changes a probability by at most {v['serial_max_abs_diff']:.2g}; "
+                   f"with four requests running at once by at most {v['parallel_max_abs_diff']:.4f}. Serial latency: median {serial[len(serial) // 2]} ms, 95th percentile {serial[int(0.95 * len(serial))]} ms.")
     if not v_rows:
         out.append(f"- Latency per request in the main run: median {sorted(ms)[len(ms) // 2]} ms.")
     return out + [""]
+
+
+REFERENCE = "jev-1.13.0"  # TypeSafe's closed original, which the other decision models imitate and AutoTrust's JEV distils
+
+
+def answer_dist(r):
+    (a,) = r["answers"].values()
+    return {"no": 1 - a["noul"], "yes": a["noul"]} if a["type"] == "noul" else a["probabilities"]
+
+
+def kl(p, q, eps=0.005):
+    # Jev reports probabilities in steps of 0.01, so its 0 means "below 0.005": both sides are floored at 0.005 and renormalised
+    p, q = {k: max(v, eps) for k, v in p.items()}, {k: max(q[k], eps) for k in p}
+    sp, sq = sum(p.values()), sum(q.values())
+    return sum(v / sp * math.log(v / sp / (q[k] / sq)) for k, v in p.items())
+
+
+def distance(rows, ref_rows):
+    """Mean KL(reference || model) per study and over all requests, matched on state and questions (keys differ per model)."""
+    ref = {json.dumps([r["state"], r["questions"]]): answer_dist(r) for r in ref_rows}
+    per = {}
+    for r in rows:
+        per.setdefault(r["study"], []).append(kl(ref[json.dumps([r["state"], r["questions"]])], answer_dist(r)))
+    return {"all": mean([v for vs in per.values() for v in vs]), **{s: mean(vs) for s, vs in per.items()}}
 
 
 def headline(all_nums, ran):
@@ -701,6 +750,10 @@ def headline(all_nums, ran):
         ("ss", "Check: option order changes the modal StereoSet answer in", "", lambda n: f"{100 * n['ss_order_flip']:.1f}% of items"),
         ("2ab", "Check: scale 7-1 instead of 1-7 changes E[rating] by", "", lambda n: f"{n['scale_abs_diff']:.2f}"),
         ("2ab", "Check: rating and yes/no agree (Spearman)", "", lambda n: f"{n['format_rho']:.2f}"),
+        ("1", f"Confidence gate {GATE}: uncued top answers girl / boy, kept of all", "", lambda n: "{female_gated} of {female} / {male_gated} of {male}".format(**n["gate_uncued"])),
+        ("bbq", f"Confidence gate {GATE}: BBQ gender picks stereotyped / other, kept of all", "", lambda n: "{stereotyped_gated} of {stereotyped} / {other_gated} of {other}".format(**n["gate_bbq"])),
+        ("1", f"Distance to {REFERENCE}: mean KL, all requests / Study 1 / BBQ / StereoSet", "", lambda n: " / ".join(f"{n['kl_ref'].get(k, float('nan')):.3f}" for k in ("all", "1", "bbq", "ss")) if "kl_ref" in n else "no reference"),
+        ("1", "Check: distance of a second pass to the first: mean KL, same columns", "", lambda n: " / ".join(f"{n['kl_repeat'].get(k, float('nan')):.3f}" for k in ("all", "1", "bbq", "ss")) if "kl_repeat" in n else ""),
     ]
     body = [[label, paper, *(cell(n) if study in ran[m] else "not run" for m, n in all_nums.items())]
             for study, label, paper, cell in rows if any(study in ran[m] for m in all_nums)]
@@ -716,7 +769,8 @@ def main():
     for path in paths:
         for line in path.open():
             r = json.loads(line)
-            d = data.setdefault(r["model"], {"rows": {}, "checks": []})
+            # one file is one run: a second pass of the same model (run.py --out) has the same model and keys
+            d = data.setdefault(path.stem, {"rows": {}, "checks": []})
             if r["study"] == "V":
                 d["checks"].append(r)
             else:
@@ -731,6 +785,10 @@ def main():
         if short:
             sys.exit(f"analyze.py: {model} is incomplete, (answered, expected) per study: {short}; finish the run with run.py first")
         nums = all_nums[model] = {}
+        if REFERENCE in data:
+            nums["kl_ref"] = distance(rows, data[REFERENCE]["rows"].values())
+        if model.endswith("-pass2") and model[:-6] in data:
+            nums["kl_repeat"] = distance(rows, data[model[:-6]]["rows"].values())
         not_run = [s for s in stimuli.STUDIES if s not in ran[model]]
         sections += [f"## {model}", ""] + checks(model, rows, d["checks"]) + ([f"Not run for this model yet: {', '.join(not_run)}.", ""] if not_run else [])
         for s in ANALYSES:

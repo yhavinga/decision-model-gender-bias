@@ -8,3 +8,6 @@ paper/*.fls
 paper/*.log
 paper/*.out
 paper/arxiv.tar.gz
+.env
+# TypeSafe's terms forbid training or distilling on Jev's output: its raw answers stay local, the numbers derived from them are in summary.md and figures.json
+results/jev-1.1*.jsonl

@@ -1,11 +1,14 @@
 # When the top answer decides: gender bias in decision models
 
-Decision models are language models built to route, classify and triage: they return option probabilities from one forward pass, and an application acts on the top answer. This repository tests five open decision models with the gender-bias studies of Fulgu & Capraro (2024), ["Surprising gender biases in GPT"](https://arxiv.org/abs/2407.06003), and with two bias benchmarks, BBQ and StereoSet: 9,955 requests per model. The models are also compared with their base models and with generated answers.
+Decision models are language models built to route, classify and triage: they return option probabilities from one forward pass, and an application acts on the top answer. TypeSafe AI introduced the class with its closed model Jev; open models answer the same request format, and AutoTrust distils Jev into open weights. This repository tests Jev and seven open decision models with the gender-bias studies of Fulgu & Capraro (2024), ["Surprising gender biases in GPT"](https://arxiv.org/abs/2407.06003), and with two bias benchmarks, BBQ and StereoSet: 9,955 requests per model. The models are also compared with their base models, with generated answers and with Jev itself.
 
 **Paper:** [`paper/main.pdf`](paper/main.pdf) (source in [`paper/`](paper/)).
 
 | Decision model | Maker | Control |
 | --- | --- | --- |
+| [Jev 1.14](https://docs.typesafe.ai/models) (closed, API) | TypeSafe AI | Jev 1.13; a second pass over all requests |
+| [JEV-27B](https://huggingface.co/autotrust/JEV-27B) | AutoTrust AI | its teacher Jev 1.13; backbone Qwen3.8-27B, as for pplx |
+| [JEV-9B](https://huggingface.co/autotrust/JEV-9B) | AutoTrust AI | its teacher Jev 1.13; backbone Qwen3.5-9B, as for clef-flash |
 | [pplx-decider-v1.1-27b](https://huggingface.co/perplexity-ai/pplx-decider-v1.1-27b) | Perplexity | base model Qwen3.8-27B, also with generated answers |
 | [clef-flash](https://huggingface.co/Cloudflare/clef-flash) (9B) | Cloudflare | base model Qwen3.5-9B |
 | [granite-switch-4.1-8b](https://huggingface.co/ibm-granite/granite-switch-4.1-8b) | IBM | its own text interface |
@@ -14,10 +17,11 @@ Decision models are language models built to route, classify and triage: they re
 
 Findings:
 
-- **Biased against men in moral trade-offs.** All five accept violence against a man more readily than against a woman when it serves a greater good, in all 100 combinations of model, act and stake. Without a stake there is no gap, except for insults.
-- **A default that needs a forced choice.** Forced to say who wrote a child's phrase without a gender cue, clef-flash answers "girl" in 90% of cases and granite-switch in 81%. Offered "can't tell", they mostly decline.
-- **Missing information filled with stereotypes.** Without evidence the models often decline to name a person in BBQ (pplx names one in 6% of the questions, granite-switch in 66%). When they name someone, four of five mostly name the stereotyped person on gender, and all five lean that way in eight other BBQ categories. BBQ's standard score hides this, because it rewards declining.
-- **The top answer amplifies.** Acting on the top answer turns probability leans of about 0.6 into decisions of up to 0.93.
+- **Biased against men in moral trade-offs.** All eight rate violence against a man as more acceptable than against a woman when it serves a greater good: in the mean rating of all 160 combinations of model, act and stake, and in the top answers of 98 (none reverses). Jev's gaps are among the largest. Without a stake the gaps are small, except for insults.
+- **A default that needs a forced choice.** Forced to say who wrote a child's phrase without a gender cue, JEV-9B answers "girl" in 94% of cases, clef-flash in 90% and granite-switch in 81%; Jev answers "non-binary" most often (47%). Offered "can't tell", they decline in 74% to 100% of cases.
+- **Missing information filled with stereotypes.** Without evidence the models often decline to name a person in BBQ (Jev never names one in the gender questions, granite-switch in 67%). Of the six models that name someone in more than 5% of the questions, five mostly name the stereotyped person on gender, and every model-category cell with at least 10 picks leans that way in eight other BBQ categories. BBQ's standard score hides this, because it rewards declining.
+- **The imitations differ from Jev in their biases.** AutoTrust reports its distillations as indistinguishable from Jev 1.13 on its own test set (mean KL 0.025 to 0.028 for choice questions); on these choice questions they are 3 to 9 times further from it. JEV-9B says "girl" where Jev says "non-binary", and names stereotyped people where Jev names no one. Jev itself varies between identical calls (a second pass is 0.002 away) and between versions (1.13 to 1.14: 0.018).
+- **The top answer amplifies, or hides.** Acting on the top answer turns probability leans of about 0.6 into decisions of up to 0.94. Jev's top answer never names a person in an ambiguous BBQ gender question, yet the little probability it puts on the two people falls 81% on the stereotyped one. A confidence gate, as the makers advise, removes many of these decisions but mostly not their direction: granite-switch would still act on 189 stereotyped picks against 34 others.
 - **Decision training, base model or interface?** The decision models differ from their base models mostly in their defaults; the moral-trade-off gap differs clearly only for Kev. GPT-4's 4.65-point vignette contrast stays below 0.6 here, also with generated answers.
 
 ## Figures
@@ -26,15 +30,15 @@ Findings:
 
 *Moral trade-offs.* Acceptability of each act against a man minus against a woman, on the 1-7 scale. Dot and whisker: nuclear apocalypse, 95% interval over 20 prompt variants. Bar: mean over five stakes. Ring: GPT-4 (paper).
 
-<img src="figures/fig-classification.png" width="420" alt="Two models default to girl when forced to choose, and decline when they may">
+<img src="figures/fig-classification.png" width="420" alt="Three models default to girl when forced to choose, and nearly all decline when they may">
 
 *Classifying children's writing.* Top answers for eight phrases without a gender cue: forced to choose girl, boy or non-binary (upper bar), and with "can't tell" offered (lower bar).
 
-![All five prefer the stereotyped sentence; four of five follow the stereotype when they name a person](figures/fig-benchmarks.png)
+![All eight prefer the stereotyped sentence; most that name a person follow the stereotype](figures/fig-benchmarks.png)
 
 *StereoSet and BBQ, gender items.* Left: share of items in which the stereotyped sentence is more probable. Right: top answers to the 570 BBQ questions without evidence; "unknown" is right.
 
-![Acting on the top answer turns leans of about 0.6 into decisions of up to 0.93](figures/fig-lean.png)
+![Acting on the top answer turns leans of about 0.6 into decisions of up to 0.94](figures/fig-lean.png)
 
 *From probability to decision.* Ring: mean probability of the default or stereotyped option. Dot: share of top answers that choose it.
 
@@ -45,14 +49,15 @@ All numbers come from `results/figures.json`; `make figures` redraws the figures
 | Path | Purpose |
 | --- | --- |
 | `stimuli.py` | The paper's 20 phrase pairs (Table 1), dilemmas and Neo Metropolis vignette, plus our prompt variants, neutral phrases, controls and extensions. Asserts on import that its copy of Table 1 reproduces the paper's six published inclusivity indices. Builds the BBQ and StereoSet requests. |
-| `run.py` | Sends the stimuli to one model (LM Studio or llama.cpp's `llama-server`) and appends every answer to `results/<model>.jsonl`. |
+| `run.py` | Sends the stimuli to one model (LM Studio, llama.cpp's `llama-server`, TypeSafe's API or vLLM) and appends every answer to `results/<model>.jsonl`. |
 | `analyze.py` | Computes the paper's measures and the reliability checks; writes `results/summary.md` and `results/figures.json`. |
 | `paper/` | The paper: `main.tex`, `references.bib`, `figures.py` (draws the figures from `results/`), the ACL style files and a `Makefile`. |
 | `figures/` | PNG copies of the paper's figures, for this README. |
 | `data/` | BBQ and StereoSet files, downloaded by `stimuli.py` on first use from pinned commits and checked against their sha256; not in git. |
-| `results/*.jsonl` | Raw answers, one line per request; `study: "V"` lines hold the determinism and latency checks. See [Runs](#runs). |
+| `results/*.jsonl` | Raw answers, one line per request; `study: "V"` lines hold the determinism and latency checks. See [Runs](#runs). Jev's answers are not published: TypeSafe's terms forbid training or distilling on its output; the numbers derived from them are in `results/summary.md` and `results/figures.json`. |
 | `results/summary.md` | All tables, per model, next to the paper's GPT numbers. |
-| `results/servers-z390.json` | The CUDA runs: Docker image, llama-server build, per model the GGUF file, its sha256 and the server arguments. |
+| `results/servers-z390.json` | The CUDA runs: Docker images, llama-server build and vLLM version, per model the weights (GGUF file and sha256, or Hugging Face revision and head hashes) and the server arguments. |
+| `results/api-typesafe.json` | The Jev runs through TypeSafe's API: date, model versions, price, and what was observed about its answers. |
 | `results/checks/` | Data behind the stability checks (paper, Appendix C): the precision x path experiment (`paths/`), granite-switch with the server's default cache settings (`granite-default-settings/`) and with one token per batch, and the abandoned generated-answer run of granite-switch. Not read by `analyze.py`. |
 | `results/models.json` | The models LM Studio listed when the Mac runs were made. |
 
@@ -65,6 +70,10 @@ All numbers come from `results/figures.json`; `make figures` redraws the figures
 | `granite-switch-4.1-8b` | granite-switch-4.1-8b, Q4_K_M | decision, slot erased per request | CUDA |
 | `kev-4b` | Kev 4B, Q4_K_M | decision | CUDA |
 | `d1-3b` | d1 3B, Q4_K_M | decision | CUDA |
+| `jev-1.14.0`, `jev-1.14.0-pass2` | TypeSafe's Jev 1.14, twice | decision (`/v1/systemone`) | TypeSafe's API, 28 Oct 2026 |
+| `jev-1.13.0` | TypeSafe's Jev 1.13, the version AutoTrust distils | decision | TypeSafe's API, 28 Oct 2026 |
+| `jev-27b` | AutoTrust's JEV-27B, fp8 weights on load | decision head through vLLM (`--readout jev`) | CUDA, two GPUs |
+| `jev-9b` | AutoTrust's JEV-9B, bf16 | decision head through vLLM (`--readout jev`) | CUDA |
 | `granite-switch-4.1-8b-bf16`, `kev-4b-bf16` | the same in bf16 | decision | CUDA |
 | `qwen3.8-27b-logprobs` | Qwen3.8-27B, Q4_K_M (pplx's base) | option letters | CUDA |
 | `qwen3.8-27b-generate` | Qwen3.8-27B | 5 generated answers per request; the paper's studies only | CUDA |
@@ -73,7 +82,7 @@ All numbers come from `results/figures.json`; `make figures` redraws the figures
 | `granite-switch-4.1-8b-logprobs` | granite-switch's text interface | option letters | CUDA |
 | `pplx-decider-27b-artemis`, `cloudflare_clef-flash` | the same files as on CUDA | decision | Mac (LM Studio), the paper's studies only |
 
-"CUDA" is a Linux machine with two RTX 3090s, one `llama-server` per model pinned to one GPU, requests serial. The Mac runs are a check on the platform: over the 1,620 shared requests the top answer differs from CUDA in 1.3% (pplx) and 1.4% (clef-flash) of requests.
+"CUDA" is a Linux machine with two RTX 3090s, one `llama-server` per model pinned to one GPU, requests serial; the JEV models ran in vLLM 0.32.0 with eight requests at once. The Mac runs are a check on the platform: over the 1,620 shared requests the top answer differs from CUDA in 1.3% (pplx) and 1.4% (clef-flash) of requests.
 
 ## LM Studio setup
 
@@ -119,6 +128,26 @@ docker run -d --gpus device=0 -v ~/models:/models:ro -p 127.0.0.1:8081:8080 ghcr
 python3 run.py --model kev-4b --url http://localhost:8081 --llama-server
 ```
 
+**Jev** through TypeSafe's API (a key in an environment variable; a full pass costs about $0.16):
+
+```bash
+python3 run.py --model jev-1.14.0 --url https://api.typesafe.ai --key-env TYPESAFE_API_KEY --workers 8
+python3 run.py --model jev-1.14.0 --url https://api.typesafe.ai --key-env TYPESAFE_API_KEY --workers 8 --out jev-1.14.0-pass2
+```
+
+Ask a versioned id such as `jev-1.14.0`: `run.py` stops if any answer comes from another version. Jev's answers vary between identical calls, so `--out` writes a second pass to its own file.
+
+**AutoTrust's JEV** through vLLM with its LoRA adapter, read as the model card's reference client does (`--jev-dir` holds the card's `adapter_vllm/decision_head.json` and `calibration.json`):
+
+```bash
+docker run -d --gpus device=0 -p 8000:8000 -v ~/models/jev:/models vllm/vllm-openai:v0.32.0 /models/JEV-9B \
+  --served-model-name autotrust/JEV-9B --enable-lora --max-lora-rank 32 --lora-modules jev-9b=/models/JEV-9B/adapter_vllm \
+  --logprobs-mode processed_logprobs --max-model-len 4096 --max-num-seqs 16
+python3 run.py --model jev-9b --url http://localhost:8000 --readout jev --jev-dir data/JEV-9B --workers 8
+```
+
+JEV's score type has six fixed levels, so `--readout jev` asks the 1-7 ratings as a choice among the seven labelled levels.
+
 - Decision models answer typed questions (`choice`, `score`, `noul`) through `POST /v1/systemone`, not through chat completions. `--llama-server` checks through `/v1/models` that the server runs that alias with the output the readout needs.
 - **granite-switch:** start the server with `-np 1 --slot-save-path /tmp` and add `--erase-slot`. For a decision model that also generates text, `llama-server` reuses the KV cache of the previous prompt whatever `--no-cache-prompt` says, so without an empty slot an answer depends on the request before (paper, Appendix C).
 - **Chat and base models** get the same questions as text with lettered options: `--readout logprobs` reads the probabilities of the option letters as the first answer token (thinking off), `--readout generate` samples `--samples` answers (default 5) and counts them, and `--raw` sends a plain prompt to `/completion` for a base model without a chat template.
@@ -145,12 +174,14 @@ python3 run.py --model kev-4b --url http://localhost:8081 --llama-server
 
 ## Method notes
 
-- A decision model returns probabilities from one forward pass and generates no text, so the same request always gives the same answer. The paper's repeated chats are therefore replaced by prompt variants: wording, option order and scale direction (18 to 24 variants per item). Intervals and p-values show robustness across variants, not sampling error.
+- A decision model returns probabilities from one forward pass and generates no text. The locally served models give the same answer to the same request (the JEV models within 0.015), so the paper's repeated chats are replaced by prompt variants: wording, option order and scale direction (18 to 24 variants per item). Intervals and p-values show robustness across variants, not sampling error. Jev's answers vary between identical calls (by up to 0.11 in one probability) and come in steps of 0.01; a second full pass of Jev 1.14 is 0.002 away in mean KL and moves no headline rating by more than 0.13 points and no share by more than one percentage point.
+- `analyze.py` also measures each model's distance to Jev 1.13: the mean KL divergence from Jev 1.13's answer distribution to the model's, per request, with probabilities floored at 0.005.
+- `analyze.py` also counts which biased top answers survive a confidence gate of 0.5, with TypeSafe's confidence of a choice among k options, (k x largest probability - 1) / (k - 1), and its example floor.
 - Every answer is read two ways: the mean under the model's own probabilities (what the paper's mean over sampled answers estimates) and the most probable (modal) answer, which an application acts on.
 - Gaps are signed so that a positive number means violence against the man is judged more acceptable than the same against the woman.
 - The paper does not label its three control pairs; we took pairs 8, 10 and 17, which state the gender outright.
 
-Limits are in the paper (Section 9): one description of the victim per sex, 4-bit main runs, base models that answer through option letters rather than a decision head, benchmark subsets, English only and no human baseline.
+Limits are in the paper (Section 10): one description of the victim per sex, Jev seen only through its API on one date, JEV's ratings asked as a choice, 4-bit main runs of the five API imitations, base models that answer through option letters rather than a decision head, benchmark subsets, English only and no human baseline.
 
 ## License
 

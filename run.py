@@ -1,8 +1,8 @@
 """Run the stimuli in stimuli.py against one LM Studio decision model; every answer is appended to results/<model>.jsonl.
 
 A decision model answers through POST /v1/systemone, not through /v1/chat/completions: one forward pass
-returns probabilities and no tokens. Identical requests give identical answers, so the paper's repeated chats
-are replaced by the prompt variants in stimuli.py.
+returns probabilities and no tokens. A locally served model gives identical answers to identical requests, so the
+paper's repeated chats are replaced by the prompt variants in stimuli.py; TypeSafe's Jev does not, so --out holds a second pass.
 
     python3 run.py --list
     python3 run.py --model pplx-decider-27b-artemis --determinism
@@ -11,15 +11,19 @@ are replaced by the prompt variants in stimuli.py.
     python3 run.py --model kev-4b --url http://localhost:8081 --llama-server   # llama.cpp's llama-server, started with --alias kev-4b
     python3 run.py --model qwen3.8-27b-logprobs --url http://localhost:8082 --llama-server --readout logprobs   # a chat model, same questions
     python3 run.py --model qwen3.8-27b-generate --url http://localhost:8082 --llama-server --readout generate   # sampled answers, as in the paper
+    python3 run.py --model jev-1.14.0 --url https://api.typesafe.ai --key-env TYPESAFE_API_KEY --workers 8   # TypeSafe's Jev; its answers vary between calls
+    python3 run.py --model jev-9b --url http://z390:8000 --readout jev --jev-dir data/JEV-9B   # AutoTrust's JEV in vLLM, LoRA module jev-9b
 
 A chat or base model has no /v1/systemone, so --readout logprobs asks each typed question as text with lettered options
 and reads the probabilities of the option letters (or yes/no) as the first answer token; --readout generate samples
-answers and counts them. Both write answers in systemone's format, so analyze.py reads every readout alike.
+answers and counts them. AutoTrust's JEV has no /v1/systemone either: --readout jev reads its decision head through
+vLLM as its model card does. All readouts write answers in systemone's format, so analyze.py reads every readout alike.
 """
 import argparse
 import hashlib
 import json
 import math
+import os
 import re
 import sys
 import time
@@ -31,8 +35,10 @@ from pathlib import Path
 import stimuli
 
 URL = "http://localhost:1234"
+API_KEY = None
 ERASE_SLOT = False
 READOUT, RAW, SAMPLES = "systemone", False, 5
+JEV_HEAD = JEV_TEMP = None
 LETTERS = "ABCDEFGHIJ"
 RESULTS = Path(__file__).parent / "results"
 
@@ -43,14 +49,20 @@ class ServerError(RuntimeError):
 
 def call(path, body=None, timeout=120):
     data = None if body is None else json.dumps(body).encode()
-    request = urllib.request.Request(URL + path, data, {"content-type": "application/json"})
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as res:
-            return json.load(res)
-    except urllib.error.HTTPError as e:
-        raise ServerError(f"run.py: {path} answered HTTP {e.code}: {e.read().decode(errors='replace')[:500]}") from None
-    except urllib.error.URLError as e:
-        raise ServerError(f"run.py: cannot reach {URL}{path} ({e.reason}); is the server running?") from None
+    headers = {"content-type": "application/json", **({"authorization": f"Bearer {API_KEY}"} if API_KEY else {})}
+    for attempt in range(8):
+        request = urllib.request.Request(URL + path, data, headers)
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as res:
+                return json.load(res)
+        except urllib.error.HTTPError as e:
+            # TypeSafe's API answers 429 (rate limit) and 529 (overloaded) and asks for a retry with backoff
+            if e.code in (429, 529) and attempt < 7:
+                time.sleep(float(e.headers.get("retry-after") or 2 ** attempt))
+                continue
+            raise ServerError(f"run.py: {path} answered HTTP {e.code}: {e.read().decode(errors='replace')[:500]}") from None
+        except urllib.error.URLError as e:
+            raise ServerError(f"run.py: cannot reach {URL}{path} ({e.reason}); is the server running?") from None
 
 
 def validate(questions, answers):
@@ -126,6 +138,38 @@ def ask_text(model, req):
     return {"answers": {name: {**answer, **extra}}, "usage": {"input_tokens": used, "output_tokens": out_tokens}}
 
 
+def ask_jev(model, req):
+    """One typed question to AutoTrust's JEV: the decision template, a one-token read-out restricted to the option tokens
+    of the LoRA module, plus the head bias and divided by the per-kind temperature, as decide() on the JEV-9B model card."""
+    (name, q), = req["questions"].items()
+    if q["type"] == "noul":
+        kind, keys, options = "noul", ["false", "true"], ["false", "true"]
+    elif q["type"] == "choice":
+        kind, keys, options = "choice", list(q["criteria"]), list(q["criteria"].values())
+    else:
+        # JEV's score kind has six fixed levels, 0 to 5; a 7-point scale is asked as a choice over its seven labelled levels
+        kind, keys, options = "choice", [str(i) for i in range(len(q["criteria"]))], q["criteria"]
+    lines = [f"{LETTERS[i]}) {o}" for i, o in enumerate(options)] if kind == "choice" else options
+    prompt = f"[kind] {kind}\n[state] {req['state']}\n[question] {q['instructions']}\n[options]\n" + "\n".join(lines) + "\n[decision]:"
+    s = JEV_HEAD["slots"]["ranges"][kind][0]
+    ids = JEV_HEAD["verbalizer_ids"][s: s + len(options)]
+    # temperature 1 and no top-p/top-k/min-p, as AutoTrust's serve_decide.py: the read-out must be the full distribution
+    res = call("/v1/completions", {"model": model, "prompt": prompt, "max_tokens": 1, "temperature": 1.0, "top_p": 1.0, "top_k": 0,
+                                   "min_p": 0.0, "logprobs": len(ids), "allowed_token_ids": ids, "add_special_tokens": False,
+                                   "return_tokens_as_token_ids": True})
+    lp = {int(k.split(":")[1]): v for k, v in res["choices"][0]["logprobs"]["top_logprobs"][0].items()}
+    if set(ids) - set(lp):
+        raise ValueError(f"run.py: JEV returned logprobs for {sorted(lp)}, not for all option tokens {ids}")
+    z = [(lp[t] + JEV_HEAD["bias"][s + i]) / JEV_TEMP[kind] for i, t in enumerate(ids)]
+    e = [math.exp(x - max(z)) for x in z]
+    probs = dict(zip(keys, (x / sum(e) for x in e)))
+    if q["type"] == "noul":
+        answer = {"type": "noul", "noul": probs["true"]}
+    else:
+        answer = {"type": q["type"], "probabilities": probs, **({"choice": max(probs, key=probs.get)} if q["type"] == "choice" else {})}
+    return {"answers": {name: answer}, "usage": {"input_tokens": res["usage"]["prompt_tokens"], "output_tokens": 1}}
+
+
 def ask(model, req):
     if ERASE_SLOT:
         # llama-server reuses the KV cache of the previous prompt for decision models that also generate text
@@ -134,8 +178,11 @@ def ask(model, req):
     started = time.perf_counter()
     if READOUT == "systemone":
         res = call("/v1/systemone", {"model": model, "state": req["state"], "questions": req["questions"]})
+        if API_KEY and res.get("model") != model:
+            # an alias moves to each new release; only a versioned id keeps every answer from the same model
+            raise ServerError(f"run.py: asked {model}, answered by {res.get('model')}; ask a versioned model id such as jev-1.14.0")
     else:
-        res = ask_text(model, req)
+        res = ask_jev(model, req) if READOUT == "jev" else ask_text(model, req)
     ms = round((time.perf_counter() - started) * 1000)
     try:
         validate(req["questions"], res.get("answers"))
@@ -194,24 +241,38 @@ def determinism(model, reqs, out):
 
 
 def main():
-    global URL, ERASE_SLOT, READOUT, RAW, SAMPLES
+    global URL, API_KEY, ERASE_SLOT, READOUT, RAW, SAMPLES, JEV_HEAD, JEV_TEMP
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--list", action="store_true", help="list the models of the LM Studio server and write results/models.json")
     ap.add_argument("--model")
     ap.add_argument("--url", default=URL, help=f"server address (default {URL}, LM Studio)")
     ap.add_argument("--llama-server", action="store_true", help="the server is llama.cpp's llama-server: check the model through /v1/models instead of LM Studio's /api/v0/models")
+    ap.add_argument("--key-env", help="send the API key in this environment variable as a bearer token (TypeSafe's API, --url https://api.typesafe.ai); every answer must come from the versioned --model")
     ap.add_argument("--erase-slot", action="store_true", help="llama-server: erase slot 0 before every request (start the server with -np 1 --slot-save-path DIR)")
-    ap.add_argument("--readout", choices=["systemone", "logprobs", "generate"], default="systemone", help="how the answer is read; logprobs and generate are for chat or base models (see above)")
+    ap.add_argument("--readout", choices=["systemone", "logprobs", "generate", "jev"], default="systemone", help="how the answer is read; logprobs and generate are for chat or base models, jev for AutoTrust's JEV (see above)")
+    ap.add_argument("--jev-dir", help="--readout jev: directory with the model's adapter_vllm/decision_head.json and calibration.json")
     ap.add_argument("--raw", action="store_true", help="--readout logprobs on a base model: a plain prompt to /completion instead of the chat template")
     ap.add_argument("--samples", type=int, default=SAMPLES, help="--readout generate: sampled answers per request")
     ap.add_argument("--studies", default=",".join(stimuli.STUDIES))
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--sample", type=int, help="send only about this many requests, evenly spread")
     ap.add_argument("--determinism", action="store_true", help="repeat a sample of requests, serially and in parallel, and record the largest difference")
+    ap.add_argument("--out", help="results file name without .jsonl (default: the model); a second pass of a model whose answers vary between calls")
     args = ap.parse_args()
     URL, ERASE_SLOT, READOUT, RAW, SAMPLES = args.url, args.erase_slot, args.readout, args.raw, args.samples
 
-    if args.llama_server:
+    if args.key_env:
+        # TypeSafe's /v1/models lists only aliases, so there is no model to check here; ask() checks every answer instead
+        API_KEY = os.environ.get(args.key_env) or sys.exit(f"run.py: environment variable {args.key_env} is empty or unset")
+    elif READOUT == "jev":
+        # vLLM lists the base model and each LoRA module; --model names the decision module
+        served = [m["id"] for m in call("/v1/models")["data"]]
+        if args.model not in served:
+            sys.exit(f"run.py: {URL} serves {served}, not the LoRA module {args.model}")
+        jev_dir = Path(args.jev_dir or sys.exit("run.py: --readout jev needs --jev-dir"))
+        JEV_HEAD = json.loads((jev_dir / "adapter_vllm" / "decision_head.json").read_text())
+        JEV_TEMP = json.loads((jev_dir / "calibration.json").read_text())["per_kind"]
+    elif args.llama_server:
         # llama-server serves one model under its --alias; the GGUF metadata says whether it is a decision model
         m = call("/v1/models")["data"][0]
         outputs, need = m["architecture"]["output_modalities"], "decisions" if READOUT == "systemone" else "text"
@@ -226,7 +287,7 @@ def main():
             sys.exit(f"run.py: {args.model} is {state.get(args.model, 'unknown')}, not loaded; load it first (lms load {args.model}) so it keeps its own settings")
 
     RESULTS.mkdir(exist_ok=True)
-    out = RESULTS / f"{args.model.replace('/', '_')}.jsonl"
+    out = RESULTS / f"{(args.out or args.model).replace('/', '_')}.jsonl"
     reqs = stimuli.requests(args.studies.split(","))
     if args.determinism:
         return determinism(args.model, reqs, out)

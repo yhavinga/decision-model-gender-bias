@@ -23,9 +23,12 @@ import analyze  # noqa: E402
 NUMS = json.loads((ROOT / "results" / "figures.json").read_text())
 OUT_PDF, OUT_PNG = ROOT / "paper" / "figures", ROOT / "figures"
 
-# the CUDA runs, one per decision model; the Mac runs are a platform check only
-MODELS = {"pplx": ("pplx-decider-27b-artemis-cuda", "pplx 27B"), "clef": ("cloudflare_clef-flash-cuda", "clef-flash 9B"),
+# TypeSafe's Jev (its current version, first pass), AutoTrust's distillations of it, and the CUDA runs of the open models
+# that implement its API; the Mac runs, Jev 1.13 and Jev's second pass are checks only
+MODELS = {"jev": ("jev-1.14.0", "Jev 1.14 (TypeSafe)"), "jev27": ("jev-27b", "JEV-27B (AutoTrust)"), "jev9": ("jev-9b", "JEV-9B (AutoTrust)"),
+          "pplx": ("pplx-decider-27b-artemis-cuda", "pplx 27B"), "clef": ("cloudflare_clef-flash-cuda", "clef-flash 9B"),
           "granite": ("granite-switch-4.1-8b", "granite-switch 8B"), "kev": ("kev-4b", "Kev 4B"), "d1": ("d1-3b", "d1 3B")}
+ORDER = list(MODELS)
 
 # colours and ink of the reference palette (dataviz skill), on a white page
 BLUE, GREY, AQUA, PALE = "#2a78d6", "#898781", "#1baf7a", "#dcdbd4"
@@ -65,8 +68,8 @@ def moral():
     """Study 2: the gap per act under the apocalypse, its mean over five stakes, and the vignette contrast."""
     gpt4 = {**analyze.PAPER_GAP, "vignette": analyze.PAPER_2D[("Amanda", "Adam")] - analyze.PAPER_2D[("Andrew", "Anna")]}
     acts = [("insult", "Insult"), ("harass", "Harassment"), ("abuse", "Abuse"), ("torture", "Torture"), ("vignette", "Vignette")]
-    order = ["pplx", "clef", "granite", "kev", "d1"]
-    fig, axes = plt.subplots(1, len(acts), figsize=(TEXT, 2.05), sharey=True, gridspec_kw={"wspace": 0.12})
+    order = ORDER
+    fig, axes = plt.subplots(1, len(acts), figsize=(TEXT, 2.75), sharey=True, gridspec_kw={"wspace": 0.12})
     for k, (ax, (act, title)) in enumerate(zip(axes, acts)):
         ax.axvline(0, color=AXIS, lw=0.6, zorder=0)
         if act in gpt4:
@@ -96,11 +99,11 @@ def moral():
 
 def classification():
     """Study 1 and 1u: top answers for the eight phrases without a gender cue, forced and with "can't tell"."""
-    order = ["clef", "granite", "d1", "pplx", "kev"]
+    order = sorted(ORDER, key=lambda s: -nums(s)["s1_labels"]["no gender cue"]["female"])
     parts = [("female", BLUE, "girl"), ("male", GREY, "boy"), ("non-binary", AQUA, "non-binary"), ("unknown", PALE, "can’t tell")]
     # drawn at the column width exactly (no tight bounding box), so its text prints at the size set here
-    fig = plt.figure(figsize=(COL, 2.45))
-    ax = fig.add_axes([0.025, 0.1, 0.83, 0.78])
+    fig = plt.figure(figsize=(COL, 3.6))
+    ax = fig.add_axes([0.025, 0.07, 0.83, 0.85])
     for i, slug in enumerate(order):
         forced, offered = nums(slug)["s1_labels"]["no gender cue"], nums(slug)["s1u"]["no gender cue"]
         ax.text(0, i - 0.27, MODELS[slug][1], ha="left", va="bottom", fontsize=7.5, color=INK)
@@ -125,6 +128,9 @@ def classification():
     save(fig, "fig-classification", tight=False)
 
 
+FEW = 10  # below this many picks of a person, a share of them is shown as a count
+
+
 def bbq_counts(slug):
     """Ambiguous gender questions that have a stereotyped answer: how often the top answer names the stereotyped person,
     the other person, or "unknown"."""
@@ -137,8 +143,8 @@ def bbq_counts(slug):
 
 def benchmarks():
     """StereoSet ss with its interval, and the BBQ answers to questions without evidence."""
-    order = ["granite", "clef", "d1", "pplx", "kev"]
-    fig, (a1, a2) = plt.subplots(1, 2, figsize=(TEXT, 1.85), sharey=True, gridspec_kw={"width_ratios": [1, 1.25], "wspace": 0.14})
+    order = sorted(ORDER, key=lambda s: bbq_counts(s)[2])  # most picks of a person first
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(TEXT, 2.6), sharey=True, gridspec_kw={"width_ratios": [1, 1.25], "wspace": 0.14})
     for i, slug in enumerate(order):
         ss = nums(slug)["ss"]["both|all"]
         a1.plot(ss["ss_ci"], [i, i], color=GREY, lw=1.6, solid_capstyle="butt")
@@ -151,7 +157,9 @@ def benchmarks():
             a2.barh(i, n / total, left=left, height=0.55, color=color, edgecolor="white", linewidth=0.6)
             left += n / total
         a2.text(0.985, i, f"{100 * unk / total:.0f}%", va="center", ha="right", fontsize=7, color=INK2)
-        a2.text(1.13, i, f"{100 * st / (st + ot):.0f}%", va="center", ha="center", fontsize=7.5, color=INK)
+        few = st + ot < FEW
+        label = "no picks" if st + ot == 0 else f"{st} of {st + ot}" if few else f"{100 * st / (st + ot):.0f}%"
+        a2.text(1.13, i, label, va="center", ha="center", fontsize=6.5 if few else 7.5, color=INK2 if few else INK)
     a1.axvline(50, color=AXIS, lw=0.8, ls=(0, (3, 2)), zorder=0)
     a1.text(50.6, len(order) - 0.45, "50 = no preference", fontsize=6.5, color=INK2, va="bottom")
     a1.set_xlim(45, 85)
@@ -172,18 +180,22 @@ def benchmarks():
 
 def lean():
     """Mean probability for the default or stereotyped option against the share of top answers that choose it."""
-    order = ["clef", "granite", "d1", "pplx", "kev"]
+    order = ORDER
     tasks = [("Uncued writing: “girl”", lambda n: (n["neutral_pf"], n["s1_labels"]["no gender cue"]["female"]
                                                      / (n["s1_labels"]["no gender cue"]["female"] + n["s1_labels"]["no gender cue"]["male"]))),
              ("BBQ picks: stereotyped person", lambda n: (n["bbq"]["all|mean"]["share"], n["bbq"]["all|modal"]["share"])),
              ("StereoSet: stereotyped sentence", lambda n: (n["ss"]["both|all"]["ss_soft"] / 100, n["ss"]["both|all"]["ss_modal"] / 100))]
-    fig, axes = plt.subplots(1, 3, figsize=(TEXT, 1.75), sharey=True, gridspec_kw={"wspace": 0.1})
+    fig, axes = plt.subplots(1, 3, figsize=(TEXT, 2.45), sharey=True, gridspec_kw={"wspace": 0.1})
     for k, (ax, (title, get)) in enumerate(zip(axes, tasks)):
         ax.axvline(0.5, color=AXIS, lw=0.8, ls=(0, (3, 2)), zorder=0)
         for j, slug in enumerate(order):
             p, d = get(nums(slug))
-            ax.plot([p, d], [j, j], color=BLUE, alpha=0.45, lw=1.6, solid_capstyle="butt")
             ax.plot(p, j, "o", ms=5, mfc="white", mec=GREY, mew=1.3)
+            picks = sum(bbq_counts(slug)[:2]) if title.startswith("BBQ") else FEW
+            if picks < FEW:  # too few top answers name a person for their share to mean anything
+                ax.text(p + 0.03, j, f"{picks} picks" if picks else "no picks", va="center", fontsize=6.5, color=INK2)
+                continue
+            ax.plot([p, d], [j, j], color=BLUE, alpha=0.45, lw=1.6, solid_capstyle="butt")
             ax.plot(d, j, "o", ms=4.5, color=BLUE, mec="white", mew=0.5)
         ax.set_xlim(0.4, 1.0)
         ax.set_xticks([0.5, 0.75, 1.0], ["0.5", "0.75", "1"])

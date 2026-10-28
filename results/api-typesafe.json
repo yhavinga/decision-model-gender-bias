@@ -1,0 +1,17 @@
+{
+ "endpoint": "https://api.typesafe.ai/v1/systemone",
+ "date": "2026-10-28",
+ "models": {
+  "jev-1.14.0": "Jev 1.14, released 2026-10-14; jev-latest on the run date",
+  "jev-1.13.0": "Jev 1.13, the version AutoTrust's JEV models distil"
+ },
+ "files": {
+  "jev-1.14.0.jsonl": "every request once, plus the determinism check (not published: TypeSafe's terms forbid training or distilling on Jev's output)",
+  "jev-1.14.0-pass2.jsonl": "every request a second time (run.py --out), to measure how much answers vary between calls (not published: TypeSafe's terms forbid training or distilling on Jev's output)",
+  "jev-1.13.0.jsonl": "every request once, plus the determinism check (not published: TypeSafe's terms forbid training or distilling on Jev's output)"
+ },
+ "run": "python3 run.py --model <model> --url https://api.typesafe.ai --key-env TYPESAFE_API_KEY --workers 8",
+ "checks": "run.py requires every response's model field to equal the versioned model id asked for",
+ "price": "$0.042 per million input tokens, output free; 3,758,840 input tokens per pass of 9,955 requests",
+ "observed": "probabilities come in steps of 0.01 and sum to 1; identical requests give answers that differ by up to 0.11 (1.14) and 0.19 (1.13) in one probability"
+}
