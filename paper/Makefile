@@ -19,7 +19,7 @@ figures:
 	cd .. && python3 paper/figures.py
 
 arxiv.tar.gz: main.pdf
-	tar -czf $@ main.tex main.bbl references.bib acl.sty acl_natbib.bst $(FIGURES)
+	COPYFILE_DISABLE=1 tar -czf $@ main.tex main.bbl references.bib acl.sty acl_natbib.bst $(FIGURES)
 
 arxiv: arxiv.tar.gz
 
