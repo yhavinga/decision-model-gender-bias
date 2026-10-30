@@ -4,7 +4,7 @@ Decision models are language models built to route, classify and triage: they re
 
 This repository tests Jev and five open decision models where their output becomes a decision, with the gender-swapped decision task of Tamkin et al. (2023), [discrim-eval](https://huggingface.co/datasets/Anthropic/discrim-eval), and the makers' confidence gate, and probes the gender preferences behind those decisions with the studies of Fulgu & Capraro (2024), ["Surprising gender biases in GPT"](https://arxiv.org/abs/2407.06003), BBQ and StereoSet: 19,405 requests per model. Base models, a second interface, 4-bit files, a second serving path, Jev's versions and two open models that AutoTrust describes as students of Jev serve as controls.
 
-**Paper:** [`paper/main.pdf`](paper/main.pdf) (source in [`paper/`](paper/)).
+**Paper:** [arXiv:2610.39747](https://arxiv.org/abs/2610.39747); the same version is in [`paper/main.pdf`](paper/main.pdf) (source in [`paper/`](paper/)).
 
 | Decision model | Maker | Control | Precision as run |
 | --- | --- | --- | --- |
@@ -214,6 +214,20 @@ Studies 1 to 2d follow the original's Studies 1a-1c and 2a-2d (arXiv numbering);
 - The original does not label its three control pairs; we took pairs 8, 10 and 17, which state the gender outright.
 
 Limits are in the paper's Limitations section: one description of the victim per gender and only women and men as victims, eight uncued phrases that were not normed, hypothetical moral dilemmas, Jev seen only through its API on one date at a resolution of 0.01 and Jev 1.13 run once, JEV's ratings asked as a choice, the 27B models in 8-bit and only Kev compared with its maker's own server, base models that answer through option letters rather than a decision head, benchmark subsets, the decision task's single question wording, explicit set only and clipping near the ceiling, intervals that are too narrow with few units, unreliable Wald intervals where a mixed-model variance is zero, test families fixed during the analysis, English only, no human baseline and no deployed system.
+
+## Citation
+
+```bibtex
+@misc{havinga2026top,
+  title         = {When the Top Answer Decides: Gender Bias in Decision Models},
+  author        = {Havinga, Yeb},
+  year          = {2026},
+  eprint        = {2610.39747},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CL},
+  url           = {https://arxiv.org/abs/2610.39747}
+}
+```
 
 ## License
 
